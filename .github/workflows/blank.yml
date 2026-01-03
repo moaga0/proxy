@@ -1,0 +1,30 @@
+name: proxy
+
+on:
+  workflow_dispatch:
+    inputs:
+      page:
+        description: "Page number"
+        required: true
+        default: "1"
+
+jobs:
+  fetch-stylec:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Call StyleC API
+        run: |
+          PAGE=${{ github.event.inputs.page }}
+          curl -s -X GET \
+            "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=${PAGE}&count=50&campaignType[]=%EB%B0%A9%EB%AC%B8%ED%98%95&include_finish=false" \
+            -H "User-Agent: Mozilla/5.0" \
+            -H "Referer: https://www.stylec.co.kr/" \
+            -H "Accept: application/json" \
+            -o result.json
+
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        with:
+          name: stylec-result
+          path: result.json
