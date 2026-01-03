@@ -1,0 +1,47 @@
+name: stylec-crawler
+
+on:
+  workflow_dispatch:
+    inputs:
+      startPage:
+        required: true
+        default: "1"
+      endPage:
+        required: true
+        default: "5"
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Crawl StyleC pages
+        run: |
+          echo '{ "visit": [], "shipping": [] }' > output.json
+
+          for ((p=${{ inputs.startPage }}; p<=${{ inputs.endPage }}; p++))
+          do
+            RESPONSE=$(curl -s \
+              -H "User-Agent: Mozilla/5.0" \
+              -H "Referer: https://www.stylec.co.kr/" \
+              "https://api2.stylec.co.kr:6439/v1/trial?page=$p&count=50&include_finish=false")
+
+            echo "$RESPONSE" | jq '
+              .data.data[] |
+              if .campaign_type == "방문형" then
+                {visit: [.]}
+              else
+                {shipping: [.]}
+              end
+            ' >> temp.json
+          done
+
+          jq -s '
+            reduce .[] as $item (
+              {visit: [], shipping: []};
+              {
+                visit: .visit + ($item.visit // []),
+                shipping: .shipping + ($item.shipping // [])
+              }
+            )
+          ' temp.json
