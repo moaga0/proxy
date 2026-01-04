@@ -26,9 +26,12 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Fetch HTML using Selenium
-        run: |
-          python fetch.py
+      # - name: Fetch HTML using Selenium
+      #   run: |
+      #     python fetch.py
+
+      - name: Run fetch
+        run: python -u fetch.py
 
       - name: Zip result
         run: |
