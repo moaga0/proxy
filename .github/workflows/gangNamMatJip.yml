@@ -4,41 +4,45 @@ on:
   workflow_dispatch:
 
 jobs:
-  fetch-html:
+  crawl:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Set up directories
-        run: mkdir -p html_cache/visit html_cache/shipping
+      - name: Prepare directories
+        run: |
+          mkdir -p cache/visit
+          mkdir -p cache/shipping
 
-      - name: Fetch Visit Pages
+      - name: Fetch Visit HTML
         run: |
           for ca in 2005 2010 2015 2020 2025 2030 2035; do
             for page in {0..5}; do
-              url="https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php?ca=$ca&rpage=$page&row_num=28"
-              file="html_cache/visit/${ca}_page_${page}.html"
-              echo "Fetching $url → $file"
-              curl -s --max-time 30 --retry 3 --retry-delay 5 "$url" -o "$file" || echo "Failed: $url"
+              curl -L --retry 3 --connect-timeout 10 --max-time 30 \
+                "https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php?ca=$ca&rpage=$page&row_num=28" \
+                -o "cache/visit/${ca}_${page}.html" || true
               sleep 1
             done
           done
 
-      - name: Fetch Shipping Pages
+      - name: Fetch Shipping HTML
         run: |
           for ca in 3005 3010 3015 3020 3030; do
             for page in {0..5}; do
-              url="https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php?ca=$ca&rpage=$page&row_num=28"
-              file="html_cache/shipping/${ca}_page_${page}.html"
-              echo "Fetching $url → $file"
-              curl -s --max-time 30 --retry 3 --retry-delay 5 "$url" -o "$file" || echo "Failed: $url"
+              curl -L --retry 3 --connect-timeout 10 --max-time 30 \
+                "https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php?ca=$ca&rpage=$page&row_num=28" \
+                -o "cache/shipping/${ca}_${page}.html" || true
               sleep 1
             done
           done
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+      - name: Zip result
+        run: |
+          zip -r gangnammatjip_html.zip cache
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
         with:
           name: gangnammatjip-html
-          path: html_cache/
+          path: gangnammatjip_html.zip
