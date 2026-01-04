@@ -24,8 +24,7 @@ jobs:
 
       - name: Crawl Visit Trials with Details
         run: |
-          for ((p=1; p<=${{ inputs.visitMaxPage }}; p++))
-          do
+          for ((p=1; p<=${{ inputs.visitMaxPage }}; p++)); do
             echo "Fetching Visit Trials Page $p"
             RES=$(curl -s \
               -H "User-Agent: Mozilla/5.0" \
@@ -39,7 +38,7 @@ jobs:
             fi
 
             PAGE_JSON='[]'
-            echo "$RES" | jq -r '.data.data[].wr_id' | while read WRID; do
+            echo "$RES" | jq -r '.data.data[].wr_id' | while read -r WRID; do
               DETAIL=$(curl -s \
                 -H "User-Agent: Mozilla/5.0" \
                 -H "Referer: https://www.stylec.co.kr/" \
@@ -52,8 +51,7 @@ jobs:
 
       - name: Crawl Shipping Trials with Details
         run: |
-          for ((p=1; p<=${{ inputs.shippingMaxPage }}; p++))
-          do
+          for ((p=1; p<=${{ inputs.shippingMaxPage }}; p++)); do
             echo "Fetching Shipping Trials Page $p"
             RES=$(curl -s \
               -H "User-Agent: Mozilla/5.0" \
@@ -67,7 +65,7 @@ jobs:
             fi
 
             PAGE_JSON='[]'
-            echo "$RES" | jq -r '.data.data[].wr_id' | while read WRID; do
+            echo "$RES" | jq -r '.data.data[].wr_id' | while read -r WRID; do
               DETAIL=$(curl -s \
                 -H "User-Agent: Mozilla/5.0" \
                 -H "Referer: https://www.stylec.co.kr/" \
