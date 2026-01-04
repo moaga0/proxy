@@ -22,10 +22,11 @@ jobs:
             "shipping": { "pages": [] }
           }' > result.json
 
-      - name: Prepare temp folder
-        run: mkdir -p tmp/visit tmp/shipping
+      - name: Prepare temp folders
+        run: |
+          mkdir -p tmp/visit tmp/shipping
 
-      - name: Crawl Visit Trials with Details
+      - name: Crawl Visit Trials with Details (Parallel)
         run: |
           for ((p=1; p<=${{ inputs.visitMaxPage }}; p++)); do
             echo "Fetching Visit Trials Page $p"
@@ -38,10 +39,12 @@ jobs:
               break
             fi
 
-            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P5 -I{} sh -c \
+            # 병렬 다운로드 20개
+            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -n1 -P20 -I{} sh -c \
               "curl -s -H 'User-Agent: Mozilla/5.0' -H 'Referer: https://www.stylec.co.kr/' \
                'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/visit/{}.json"
 
+            # 페이지 단위 합치기
             jq -s '.' tmp/visit/*.json > tmp/visit_page_${p}.json
             jq --arg p "$p" --slurpfile pageData tmp/visit_page_${p}.json \
                '.visit.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
@@ -49,7 +52,7 @@ jobs:
             rm tmp/visit/*.json
           done
 
-      - name: Crawl Shipping Trials with Details
+      - name: Crawl Shipping Trials with Details (Parallel)
         run: |
           for ((p=1; p<=${{ inputs.shippingMaxPage }}; p++)); do
             echo "Fetching Shipping Trials Page $p"
@@ -62,10 +65,12 @@ jobs:
               break
             fi
 
-            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P5 -I{} sh -c \
+            # 병렬 다운로드 20개
+            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -n1 -P20 -I{} sh -c \
               "curl -s -H 'User-Agent: Mozilla/5.0' -H 'Referer: https://www.stylec.co.kr/' \
                'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/shipping/{}.json"
 
+            # 페이지 단위 합치기
             jq -s '.' tmp/shipping/*.json > tmp/shipping_page_${p}.json
             jq --arg p "$p" --slurpfile pageData tmp/shipping_page_${p}.json \
                '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
