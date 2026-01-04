@@ -22,7 +22,7 @@ jobs:
             "shipping": { "pages": [] }
           }' > result.json
 
-      - name: Crawl Visit Trials with Details
+      - name: Crawl Visit Trials with Details (Parallel)
         run: |
           for ((p=1; p<=${{ inputs.visitMaxPage }}; p++)); do
             echo "Fetching Visit Trials Page $p"
@@ -37,19 +37,16 @@ jobs:
               break
             fi
 
-            PAGE_JSON='[]'
-            echo "$RES" | jq -r '.data.data[].wr_id' | while read -r WRID; do
-              DETAIL=$(curl -s \
-                -H "User-Agent: Mozilla/5.0" \
-                -H "Referer: https://www.stylec.co.kr/" \
-                "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=$WRID")
-              PAGE_JSON=$(echo "$PAGE_JSON" | jq --argjson d "$DETAIL" '. + [$d]')
-            done
+            # WRID만 추출
+            echo "$RES" | jq -r '.data.data[].wr_id' > wrids.txt
+
+            # 병렬로 상세 호출
+            PAGE_JSON=$(cat wrids.txt | xargs -I {} -P 5 bash -c 'curl -s -H "User-Agent: Mozilla/5.0" -H "Referer: https://www.stylec.co.kr/" "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}"' | jq -s '.')
 
             jq --argjson pageData "$PAGE_JSON" --arg p "$p" '.visit.pages += [{"page": ($p|tonumber), "data": $pageData}]' result.json > tmp.json && mv tmp.json result.json
           done
 
-      - name: Crawl Shipping Trials with Details
+      - name: Crawl Shipping Trials with Details (Parallel)
         run: |
           for ((p=1; p<=${{ inputs.shippingMaxPage }}; p++)); do
             echo "Fetching Shipping Trials Page $p"
@@ -64,14 +61,11 @@ jobs:
               break
             fi
 
-            PAGE_JSON='[]'
-            echo "$RES" | jq -r '.data.data[].wr_id' | while read -r WRID; do
-              DETAIL=$(curl -s \
-                -H "User-Agent: Mozilla/5.0" \
-                -H "Referer: https://www.stylec.co.kr/" \
-                "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=$WRID")
-              PAGE_JSON=$(echo "$PAGE_JSON" | jq --argjson d "$DETAIL" '. + [$d]')
-            done
+            # WRID만 추출
+            echo "$RES" | jq -r '.data.data[].wr_id' > wrids.txt
+
+            # 병렬로 상세 호출
+            PAGE_JSON=$(cat wrids.txt | xargs -I {} -P 5 bash -c 'curl -s -H "User-Agent: Mozilla/5.0" -H "Referer: https://www.stylec.co.kr/" "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}"' | jq -s '.')
 
             jq --argjson pageData "$PAGE_JSON" --arg p "$p" '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData}]' result.json > tmp.json && mv tmp.json result.json
           done
