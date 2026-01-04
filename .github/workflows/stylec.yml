@@ -39,7 +39,7 @@ jobs:
             fi
 
             PAGE_JSON='[]'
-            for WRID in $(echo "$RES" | jq -r '.data.data[].wr_id'); do
+            echo "$RES" | jq -r '.data.data[].wr_id' | while read WRID; do
               DETAIL=$(curl -s \
                 -H "User-Agent: Mozilla/5.0" \
                 -H "Referer: https://www.stylec.co.kr/" \
@@ -67,7 +67,7 @@ jobs:
             fi
 
             PAGE_JSON='[]'
-            for WRID in $(echo "$RES" | jq -r '.data.data[].wr_id'); do
+            echo "$RES" | jq -r '.data.data[].wr_id' | while read WRID; do
               DETAIL=$(curl -s \
                 -H "User-Agent: Mozilla/5.0" \
                 -H "Referer: https://www.stylec.co.kr/" \
