@@ -3,45 +3,67 @@ name: stylec-crawler
 on:
   workflow_dispatch:
     inputs:
-      startPage:
-        required: true
-        default: "1"
-      endPage:
+      visitMaxPage:
         required: true
         default: "5"
+      shippingMaxPage:
+        required: true
+        default: "20"
 
 jobs:
   crawl:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Crawl StyleC pages
+      - name: Init result
         run: |
-          echo '{ "visit": [], "shipping": [] }' > output.json
+          echo '{
+            "visit": { "pages": [] },
+            "shipping": { "pages": [] }
+          }' > result.json
 
-          for ((p=${{ inputs.startPage }}; p<=${{ inputs.endPage }}; p++))
+      - name: Crawl Visit Trials
+        run: |
+          for ((p=1; p<=${{ inputs.visitMaxPage }}; p++))
           do
-            RESPONSE=$(curl -s \
+            RES=$(curl -s \
               -H "User-Agent: Mozilla/5.0" \
               -H "Referer: https://www.stylec.co.kr/" \
-              "https://api2.stylec.co.kr:6439/v1/trial?page=$p&count=50&include_finish=false")
+              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=배달형&campaignType[]=방문형&include_finish=false")
 
-            echo "$RESPONSE" | jq '
-              .data.data[] |
-              if .campaign_type == "방문형" then
-                {visit: [.]}
-              else
-                {shipping: [.]}
-              end
-            ' >> temp.json
+            COUNT=$(echo "$RES" | jq '.data.data | length')
+
+            if [ "$COUNT" -eq 0 ]; then
+              break
+            fi
+
+            jq --argjson page "$p" --argjson data "$(echo "$RES" | jq '.data.data')" \
+              '.visit.pages += [{"page": $page, "data": $data}]' \
+              result.json > tmp.json && mv tmp.json result.json
           done
 
-          jq -s '
-            reduce .[] as $item (
-              {visit: [], shipping: []};
-              {
-                visit: .visit + ($item.visit // []),
-                shipping: .shipping + ($item.shipping // [])
-              }
-            )
-          ' temp.json
+      - name: Crawl Shipping Trials
+        run: |
+          for ((p=1; p<=${{ inputs.shippingMaxPage }}; p++))
+          do
+            RES=$(curl -s \
+              -H "User-Agent: Mozilla/5.0" \
+              -H "Referer: https://www.stylec.co.kr/" \
+              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=미션/인증&campaignType[]=배달형&campaignType[]=구매평&campaignType[]=페이백＋구매평&campaignType[]=페이백형&include_finish=false")
+
+            COUNT=$(echo "$RES" | jq '.data.data | length')
+
+            if [ "$COUNT" -eq 0 ]; then
+              break
+            fi
+
+            jq --argjson page "$p" --argjson data "$(echo "$RES" | jq '.data.data')" \
+              '.shipping.pages += [{"page": $page, "data": $data}]' \
+              result.json > tmp.json && mv tmp.json result.json
+          done
+
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        with:
+          name: stylec-result
+          path: result.json
