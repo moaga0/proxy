@@ -22,6 +22,10 @@ jobs:
           sudo apt-get install -y google-chrome-stable
           pip install selenium webdriver-manager
 
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
       - name: Fetch HTML using Selenium
         run: |
           python fetch.py
