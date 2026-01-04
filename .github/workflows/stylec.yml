@@ -25,7 +25,7 @@ jobs:
       - name: Prepare temp folder
         run: mkdir -p tmp/details
 
-      - name: Crawl Visit Trials with Details
+      - name: Crawl Visit Trials with Details (Parallel)
         run: |
           for ((p=1; p<=${{ inputs.visitMaxPage }}; p++)); do
             echo "Fetching Visit Trials Page $p"
@@ -37,19 +37,19 @@ jobs:
               break
             fi
 
-            # WRID별 DETAIL 저장
-            echo "$RES" | jq -r '.data.data[].wr_id' | while read WRID; do
-              curl -s -H "User-Agent: Mozilla/5.0" -H "Referer: https://www.stylec.co.kr/" \
-                "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=$WRID" > tmp/details/visit_$WRID.json
-            done
+            echo "$RES" | jq -r '.data.data[].wr_id' | \
+            xargs -n1 -P5 -I{} bash -c 'curl -s -H "User-Agent: Mozilla/5.0" -H "Referer: https://www.stylec.co.kr/" "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}" > tmp/details/visit_'$p'_{}.json'
 
-            # 페이지 JSON 합치기
-            PAGE_JSON=$(jq -s '.' tmp/details/visit_*.json)
-            jq --argjson pageData "$PAGE_JSON" --arg p "$p" '.visit.pages += [{"page": ($p|tonumber), "data": $pageData}]' result.json > tmp.json && mv tmp.json result.json
-            rm tmp/details/visit_*.json
+            FILES=$(ls tmp/details/visit_${p}_*.json)
+            if [ -n "$FILES" ]; then
+              PAGE_JSON=$(jq -s '.' $FILES)
+              jq --argjson pageData "$PAGE_JSON" --arg p "$p" '.visit.pages += [{"page": ($p|tonumber), "data": $pageData}]' result.json > tmp.json
+              mv tmp.json result.json
+              rm tmp/details/visit_${p}_*.json
+            fi
           done
 
-      - name: Crawl Shipping Trials with Details
+      - name: Crawl Shipping Trials with Details (Parallel)
         run: |
           for ((p=1; p<=${{ inputs.shippingMaxPage }}; p++)); do
             echo "Fetching Shipping Trials Page $p"
@@ -61,6 +61,20 @@ jobs:
               break
             fi
 
-            # WRID별 DETAIL 저장
-            echo "$RES" | jq -r '.data.data[].wr_id' | while read WRID; do
-              curl -s -H "User-Agent: Mozilla/5.0" -H "Referer: https://www.stylec.co.kr/" \
+            echo "$RES" | jq -r '.data.data[].wr_id' | \
+            xargs -n1 -P5 -I{} bash -c 'curl -s -H "User-Agent: Mozilla/5.0" -H "Referer: https://www.stylec.co.kr/" "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}" > tmp/details/shipping_'$p'_{}.json'
+
+            FILES=$(ls tmp/details/shipping_${p}_*.json)
+            if [ -n "$FILES" ]; then
+              PAGE_JSON=$(jq -s '.' $FILES)
+              jq --argjson pageData "$PAGE_JSON" --arg p "$p" '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData}]' result.json > tmp.json
+              mv tmp.json result.json
+              rm tmp/details/shipping_${p}_*.json
+            fi
+          done
+
+      - name: Upload result.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: stylec-result
+          path: result.json
