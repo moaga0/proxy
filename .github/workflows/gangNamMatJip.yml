@@ -8,32 +8,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Prepare directory
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Chrome & Selenium
         run: |
-          mkdir -p result
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+          pip install selenium webdriver-manager
 
-      - name: Fetch HTML from target site
+      - name: Fetch HTML using Selenium
         run: |
-          for ca in 2005; do
-            for page in 0; do
-              url="https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php?ca=${ca}&rpage=${page}&row_num=28"
+          python fetch.py
 
-              echo "Fetching: $url"
+      - name: Zip result
+        run: |
+          zip -r stylec_html.zip html_cache
 
-              curl -L \
-                --connect-timeout 15 \
-                --max-time 30 \
-                -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
-                -H "Accept: text/html" \
-                "$url" \
-                -o "result/${ca}_${page}.html" || true
-
-              sleep 2
-            done
-          done
-
-      - name: Upload raw HTML
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: stylec-raw-html
-          path: result
+          name: gangNamMatJip-html
+          path: gangNamMatJip_html.zip
