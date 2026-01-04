@@ -1,4 +1,4 @@
-name: stylec-crawler
+name: stylec-crawler 
 
 on:
   workflow_dispatch:
@@ -29,15 +29,15 @@ jobs:
             RES=$(curl -s \
               -H "User-Agent: Mozilla/5.0" \
               -H "Referer: https://www.stylec.co.kr/" \
-              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%B0%B0%EB%8B%AC%ED%98%95&campaignType[]=%EB%B0%A9%EB%AC%B8%ED%98%95&include_finish=false")
+              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=배달형&campaignType[]=방문형&include_finish=false")
 
             COUNT=$(echo "$RES" | jq '.data.data | length')
+            if [ "$COUNT" -eq 0 ]; then break; fi
 
-            if [ "$COUNT" -eq 0 ]; then
-              break
-            fi
+            # 상세 정보도 추가
+            DETAILED=$(echo "$RES" | jq '.data.data | map(. + {detail: ( .wrId as $id | (curl -s -H "User-Agent: Mozilla/5.0" -H "Referer: https://www.stylec.co.kr/" "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=\($id)" | fromjson))})')
 
-            jq --argjson page "$p" --argjson data "$(echo "$RES" | jq '.data.data')" \
+            jq --argjson page "$p" --argjson data "$DETAILED" \
               '.visit.pages += [{"page": $page, "data": $data}]' \
               result.json > tmp.json && mv tmp.json result.json
           done
@@ -49,15 +49,15 @@ jobs:
             RES=$(curl -s \
               -H "User-Agent: Mozilla/5.0" \
               -H "Referer: https://www.stylec.co.kr/" \
-              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%AF%B8%EC%85%98%2F%EC%9D%B8%EC%A6%9D&campaignType[]=%EB%B0%B0%EB%8B%AC%ED%98%95&campaignType[]=%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%EF%BC%8B%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%ED%98%95&include_finish=false")
+              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=미션/인증&campaignType[]=배달형&campaignType[]=구매평&campaignType[]=페이백＋구매평&campaignType[]=페이백형&include_finish=false")
 
             COUNT=$(echo "$RES" | jq '.data.data | length')
+            if [ "$COUNT" -eq 0 ]; then break; fi
 
-            if [ "$COUNT" -eq 0 ]; then
-              break
-            fi
+            # 상세 정보 포함
+            DETAILED=$(echo "$RES" | jq '.data.data | map(. + {detail: ( .wrId as $id | (curl -s -H "User-Agent: Mozilla/5.0" -H "Referer: https://www.stylec.co.kr/" "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=\($id)" | fromjson))})')
 
-            jq --argjson page "$p" --argjson data "$(echo "$RES" | jq '.data.data')" \
+            jq --argjson page "$p" --argjson data "$DETAILED" \
               '.shipping.pages += [{"page": $page, "data": $data}]' \
               result.json > tmp.json && mv tmp.json result.json
           done
