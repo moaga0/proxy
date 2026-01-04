@@ -23,54 +23,54 @@ jobs:
           }' > result.json
 
       - name: Prepare temp folder
-        run: mkdir -p tmp/details
+        run: mkdir -p tmp/visit tmp/shipping
 
-      - name: Crawl Visit Trials with Details (Parallel)
+      - name: Crawl Visit Trials with Details
         run: |
           for ((p=1; p<=${{ inputs.visitMaxPage }}; p++)); do
             echo "Fetching Visit Trials Page $p"
             RES=$(curl -s -H "User-Agent: Mozilla/5.0" -H "Referer: https://www.stylec.co.kr/" \
               "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%B0%B0%EB%8B%AC%ED%98%95&campaignType[]=%EB%B0%A9%EB%AC%B8%ED%98%95&include_finish=false")
+
             COUNT=$(echo "$RES" | jq '.data.data | length')
             if [ "$COUNT" -eq 0 ]; then
               echo "No more Visit Trials, stopping."
               break
             fi
 
-            echo "$RES" | jq -r '.data.data[].wr_id' | \
-            xargs -n1 -P5 -I{} bash -c 'curl -s -H "User-Agent: Mozilla/5.0" -H "Referer: https://www.stylec.co.kr/" "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}" > tmp/details/visit_'$p'_{}.json'
+            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P5 -I{} sh -c \
+              "curl -s -H 'User-Agent: Mozilla/5.0' -H 'Referer: https://www.stylec.co.kr/' \
+               'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/visit/{}.json"
 
-            FILES=$(ls tmp/details/visit_${p}_*.json)
-            if [ -n "$FILES" ]; then
-              PAGE_JSON=$(jq -s '.' $FILES)
-              jq --argjson pageData "$PAGE_JSON" --arg p "$p" '.visit.pages += [{"page": ($p|tonumber), "data": $pageData}]' result.json > tmp.json
-              mv tmp.json result.json
-              rm tmp/details/visit_${p}_*.json
-            fi
+            jq -s '.' tmp/visit/*.json > tmp/visit_page_${p}.json
+            jq --arg p "$p" --slurpfile pageData tmp/visit_page_${p}.json \
+               '.visit.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
+            mv tmp.json result.json
+            rm tmp/visit/*.json
           done
 
-      - name: Crawl Shipping Trials with Details (Parallel)
+      - name: Crawl Shipping Trials with Details
         run: |
           for ((p=1; p<=${{ inputs.shippingMaxPage }}; p++)); do
             echo "Fetching Shipping Trials Page $p"
             RES=$(curl -s -H "User-Agent: Mozilla/5.0" -H "Referer: https://www.stylec.co.kr/" \
               "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%AF%B8%EC%85%98%2F%EC%9D%B8%EC%A6%9D&campaignType[]=%EB%B0%B0%EB%8B%AC%ED%98%95&campaignType[]=%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%EF%BC%8B%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%ED%98%95&include_finish=false")
+
             COUNT=$(echo "$RES" | jq '.data.data | length')
             if [ "$COUNT" -eq 0 ]; then
               echo "No more Shipping Trials, stopping."
               break
             fi
 
-            echo "$RES" | jq -r '.data.data[].wr_id' | \
-            xargs -n1 -P5 -I{} bash -c 'curl -s -H "User-Agent: Mozilla/5.0" -H "Referer: https://www.stylec.co.kr/" "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}" > tmp/details/shipping_'$p'_{}.json'
+            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P5 -I{} sh -c \
+              "curl -s -H 'User-Agent: Mozilla/5.0' -H 'Referer: https://www.stylec.co.kr/' \
+               'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/shipping/{}.json"
 
-            FILES=$(ls tmp/details/shipping_${p}_*.json)
-            if [ -n "$FILES" ]; then
-              PAGE_JSON=$(jq -s '.' $FILES)
-              jq --argjson pageData "$PAGE_JSON" --arg p "$p" '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData}]' result.json > tmp.json
-              mv tmp.json result.json
-              rm tmp/details/shipping_${p}_*.json
-            fi
+            jq -s '.' tmp/shipping/*.json > tmp/shipping_page_${p}.json
+            jq --arg p "$p" --slurpfile pageData tmp/shipping_page_${p}.json \
+               '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
+            mv tmp.json result.json
+            rm tmp/shipping/*.json
           done
 
       - name: Upload result.json
