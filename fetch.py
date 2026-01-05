@@ -1,78 +1,37 @@
-import os
-import time
-import requests
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+import time, os
 
 BASE_URL = "https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php"
-VISIT_CATEGORIES = [2005, 2010, 2015, 2020, 2025, 2030, 2035]
-SHIPPING_CATEGORIES = [3005, 3010, 3015, 3020, 3030]
 
-TIMEOUT = 15
-SLEEP_SEC = 1
+CATEGORIES = [2005,2010,2015,2020,2025,2030,2035]
+PAGES = range(6)
 
-def fetch_and_save(ca: int, page: int, target_dir: str):
-    url = f"{BASE_URL}?ca={ca}&rpage={page}&row_num=28"
-    file_path = f"{target_dir}/{ca}_{page}.html"
+options = Options()
+options.add_argument("--headless=new")
+options.add_argument("--no-sandbox")
+options.add_argument("--disable-dev-shm-usage")
+options.add_argument(
+    "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+)
 
-    print(f"[START] ca={ca} page={page}", flush=True)
-    print(f"[REQUEST] {url}", flush=True)
+driver = webdriver.Chrome(
+    service=Service(ChromeDriverManager().install()),
+    options=options
+)
 
-    try:
-        start = time.time()
-        res = requests.get(url, timeout=TIMEOUT)
-        elapsed = round(time.time() - start, 2)
+os.makedirs("output/html", exist_ok=True)
 
-        print(
-            f"[RESPONSE] ca={ca} page={page} "
-            f"status={res.status_code} elapsed={elapsed}s size={len(res.text)}",
-            flush=True
-        )
+for ca in CATEGORIES:
+    for page in PAGES:
+        url = f"{BASE_URL}?ca={ca}&rpage={page}&row_num=28"
+        driver.get(url)
+        time.sleep(2)
 
-        if res.status_code != 200 or not res.text.strip():
-            print(
-                f"[WARN] invalid response ca={ca} page={page}",
-                flush=True
-            )
-            return
+        path = f"output/html/{ca}_{page}.html"
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
 
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(res.text)
-
-        print(f"[SAVE] {file_path}", flush=True)
-
-    except requests.exceptions.Timeout:
-        print(f"[TIMEOUT] ca={ca} page={page}", flush=True)
-
-    except requests.exceptions.RequestException as e:
-        print(
-            f"[ERROR] ca={ca} page={page} exception={repr(e)}",
-            flush=True
-        )
-
-    finally:
-        print(f"[SLEEP] {SLEEP_SEC}s", flush=True)
-        time.sleep(SLEEP_SEC)
-
-
-def run():
-    print("========== FETCH START ==========", flush=True)
-
-    os.makedirs("cache/visit", exist_ok=True)
-    os.makedirs("cache/shipping", exist_ok=True)
-
-    print("[INIT] directories prepared", flush=True)
-
-    print("========== VISIT ==========", flush=True)
-    for ca in VISIT_CATEGORIES:
-        for page in range(0, 6):
-            fetch_and_save(ca, page, "cache/visit")
-
-    print("========== SHIPPING ==========", flush=True)
-    for ca in SHIPPING_CATEGORIES:
-        for page in range(0, 6):
-            fetch_and_save(ca, page, "cache/shipping")
-
-    print("========== FETCH END ==========", flush=True)
-
-
-if __name__ == "__main__":
-    run()
+driver.quit()
