@@ -1,39 +1,16 @@
-- name: Fetch Visit Pages
-  run: |
-    set +e
+name: Test Run
 
-    CATEGORIES="2005 2010 2015 2020 2025 2030 2035"
+on:
+  workflow_dispatch:
 
-    for ca in $CATEGORIES; do
-      for page in 0 1 2 3 4 5; do
-        FILE="output/html/${ca}_${page}.html"
-        URL="https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php?ca=$ca&rpage=$page&row_num=28"
+jobs:
+  test:
+    runs-on: ubuntu-latest
 
-        echo "[INFO] Fetching ▶ ca=$ca page=$page"
+    steps:
+      - uses: actions/checkout@v4
 
-        curl -L --compressed \
-          --retry 2 \
-          --connect-timeout 10 \
-          --max-time 25 \
-          -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-          -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
-          -H "Accept-Language: ko-KR,ko;q=0.9" \
-          -H "Accept-Encoding: gzip, deflate, br" \
-          -H "Connection: keep-alive" \
-          "$URL" \
-          -o "$FILE"
-
-        if [ ! -f "$FILE" ]; then
-          echo "[ERROR] Curl failed ▶ ca=$ca page=$page" | tee -a output/log/error.log
-          continue
-        fi
-
-        SIZE=$(wc -c < "$FILE")
-
-        if [ "$SIZE" -lt 5000 ]; then
-          echo "[WARN] Too small (${SIZE} bytes) ▶ ca=$ca page=$page" | tee -a output/log/blocked.log
-          rm -f "$FILE"
-          continue
-        fi
-
-        if grep -qiE "checking the connection|checking the proxy|firewall" "$FIL
+      - name: Debug run
+        run: |
+          echo "RUN OK"
+          date
