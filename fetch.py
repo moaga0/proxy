@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # ======================
 BASE_URL = "https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php"
 CATEGORIES = [2005, 2010, 2015, 2020, 2025, 2030, 2035]
-PAGES = range(6)
+PAGES = range(1)
 OUTPUT_DIR = "output/html"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -42,7 +42,20 @@ options.add_argument(
 )
 
 # ⭐ Selenium 4 방식
-options.page_load_strategy = "none"
+# options.page_load_strategy = "none"
+options.page_load_strategy = "eager"
+
+prefs = {
+    "profile.managed_default_content_settings.images": 2,
+    "profile.managed_default_content_settings.stylesheets": 2,
+    "profile.managed_default_content_settings.fonts": 2,
+    "profile.managed_default_content_settings.cookies": 2,
+    "profile.managed_default_content_settings.plugins": 2,
+    "profile.managed_default_content_settings.popups": 2,
+    "profile.managed_default_content_settings.geolocation": 2,
+    "profile.managed_default_content_settings.notifications": 2,
+}
+options.add_experimental_option("prefs", prefs)
 
 logger.info("ChromeDriver 초기화")
 
@@ -52,7 +65,7 @@ driver = webdriver.Chrome(
 )
 
 driver.set_page_load_timeout(20)
-driver.set_script_timeout(20)
+driver.set_script_timeout(3)
 
 logger.info("ChromeDriver ready")
 
