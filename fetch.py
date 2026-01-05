@@ -12,7 +12,7 @@ OUTPUT_DIR = "output/html"
 
 VISIT_CA = [2005, 2010, 2015, 2020, 2025, 2030, 2035]
 SHIPPING_CA = [3005, 3010, 3015, 3020, 3030]
-PAGES = range(0, 6)
+PAGES = range(0, 1)
 
 RETRY = 3
 LOAD_WAIT = 3       # 핵심: 무조건 이 시간만 기다림
