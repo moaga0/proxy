@@ -1,16 +1,54 @@
-name: Test Run
+name: Fetch Visit Pages
 
 on:
   workflow_dispatch:
 
 jobs:
-  test:
+  fetch:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Debug run
+      - name: Create output directory
+        run: mkdir -p output/html
+
+      - name: Fetch Visit Pages
         run: |
-          echo "RUN OK"
-          date
+          set -e
+
+          BASE_URL="https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php"
+
+          for ca in 20; do
+            for page in $(seq 0 1); do
+              echo "[INFO] Fetching ca=$ca page=$page"
+
+              curl --http1.1 -L --compressed \
+                -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+                -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" \
+                -H "Accept-Language: ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7" \
+                -H "Cache-Control: no-cache" \
+                -H "Pragma: no-cache" \
+                -H "Referer: https://xn--939au0g4vj8sq.net/" \
+                --connect-timeout 15 \
+                --max-time 30 \
+                "${BASE_URL}?ca=${ca}&rpage=${page}&row_num=28" \
+                -o "output/html/${ca}_${page}.html" || {
+                  echo "[WARN] Failed ca=$ca page=$page"
+                  break
+                }
+
+              SIZE=$(stat -c%s "output/html/${ca}_${page}.html")
+              echo "[OK] Saved ca=$ca page=$page (${SIZE} bytes)"
+
+              sleep 1
+            done
+          done
+
+      - name: Upload HTML files
+        uses: actions/upload-artifact@v4
+        with:
+          name: visit-html
+          path: output/html
