@@ -6,7 +6,8 @@ on:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-
+    environment: PROXY_HOST
+    
     steps:
       - name: Fetch Visit Pages via Webshare Proxy
         env:
