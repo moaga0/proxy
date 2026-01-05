@@ -24,6 +24,7 @@ jobs:
             -x http://${PROXY_USER}:${PROXY_PASS}@${PROXY_HOST}:${PROXY_PORT} \
             -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
             -H "Accept: text/html,application/xhtml+xml" \
+            --tlsv1.2 \
             --connect-timeout 20 \
             --max-time 30 \
             --retry 2 \
