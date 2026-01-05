@@ -1,4 +1,4 @@
-name: GangNamMatJip
+name: StyleC Visit Crawl
 
 on:
   workflow_dispatch:
@@ -6,31 +6,64 @@ on:
 jobs:
   crawl:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
+      - name: Prepare directories
         run: |
-          pip install -r requirements.txt
+          mkdir -p output/html
+          mkdir -p output/log
 
-      - name: Run Selenium Crawl
-        run: python fetch.py
+      - name: Fetch Visit Pages
+        run: |
+          set +e
 
-      - name: Parse HTML
-        run: python parse.py
+          CATEGORIES="20"
+
+          for ca in $CATEGORIES; do
+            for page in 0 1; do
+              echo "[INFO] Fetching ca=$ca page=$page"
+
+              FILE="output/html/${ca}_${page}.html"
+
+              curl -L --compressed \
+                --retry 2 \
+                --connect-timeout 10 \
+                --max-time 25 \
+                -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+                -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8" \
+                -H "Accept-Language: ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7" \
+                -H "Accept-Encoding: gzip, deflate, br" \
+                -H "Connection: keep-alive" \
+                -H "Upgrade-Insecure-Requests: 1" \
+                -H "Sec-Fetch-Site: same-origin" \
+                -H "Sec-Fetch-Mode: navigate" \
+                -H "Sec-Fetch-User: ?1" \
+                -H "Sec-Fetch-Dest: document" \
+                "https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php?ca=$ca&rpage=$page&row_num=28" \
+                -o "$FILE"
+
+              # 차단 페이지 판별
+              if grep -qiE "checking the connection|checking the proxy|firewall" "$FILE"; then
+                echo "[WARN] Blocked ca=$ca page=$page" | tee -a output/log/blocked.log
+                rm -f "$FILE"
+              else
+                SIZE=$(wc -c < "$FILE")
+                echo "[OK] Saved ca=$ca page=$page (${SIZE} bytes)"
+              fi
+
+              sleep 2
+            done
+          done
 
       - name: Zip result
         run: |
-          zip -r gangnammatjip_result.zip output
+          zip -r stylec_visit_html.zip output
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gangnammatjip-result
-          path: gangnammatjip_result.zip
+          name: stylec-visit-html
+          path: stylec_visit_html.zip
