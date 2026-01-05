@@ -18,7 +18,7 @@ jobs:
         run: |
           echo "▶ Start fetching with Webshare proxy"
 
-          TARGET_URL="https://xn--939au0g4vj8sq.net"
+          TARGET_URL="http://xn--939au0g4vj8sq.net"
 
           curl -v \
             -x http://${PROXY_USER}:${PROXY_PASS}@${PROXY_HOST}:${PROXY_PORT} \
