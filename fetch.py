@@ -10,8 +10,10 @@ from webdriver_manager.chrome import ChromeDriverManager
 BASE_URL = "https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php"
 OUTPUT_DIR = "output/html"
 
-VISIT_CA = [2005, 2010, 2015, 2020, 2025, 2030, 2035]
-SHIPPING_CA = [3005, 3010, 3015, 3020, 3030]
+# VISIT_CA = [2005, 2010, 2015, 2020, 2025, 2030, 2035]
+# SHIPPING_CA = [3005, 3010, 3015, 3020, 3030]
+VISIT_CA = [20]
+SHIPPING_CA = [30]
 PAGES = range(0, 1)
 
 RETRY = 3
