@@ -1,7 +1,6 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from webdriver_manager.chrome import ChromeDriverManager
 import time
 import os
@@ -42,16 +41,14 @@ options.add_argument(
     "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 )
 
-# ⭐ 핵심
-caps = DesiredCapabilities.CHROME.copy()
-caps["pageLoadStrategy"] = "none"
+# ⭐ Selenium 4 방식
+options.page_load_strategy = "none"
 
 logger.info("ChromeDriver 초기화")
 
 driver = webdriver.Chrome(
     service=Service(ChromeDriverManager().install()),
-    options=options,
-    desired_capabilities=caps
+    options=options
 )
 
 driver.set_page_load_timeout(20)
@@ -75,7 +72,7 @@ try:
             try:
                 driver.get(url)
 
-                # ⭐ 완전 로딩 기다리지 않음
+                # ⭐ 끝까지 안 기다림
                 time.sleep(3)
 
                 html = driver.page_source
