@@ -17,13 +17,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r crawl/requirements.txt
+          pip install -r requirements.txt
 
       - name: Run Selenium Crawl
-        run: python crawl/crawl.py
+        run: python fetch.py
 
       - name: Parse HTML
-        run: python crawl/parse.py
+        run: python parse.py
 
       - name: Zip result
         run: |
