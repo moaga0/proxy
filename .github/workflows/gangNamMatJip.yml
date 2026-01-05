@@ -1,69 +1,39 @@
-name: StyleC Visit Crawl
+- name: Fetch Visit Pages
+  run: |
+    set +e
 
-on:
-  workflow_dispatch:
+    CATEGORIES="2005 2010 2015 2020 2025 2030 2035"
 
-jobs:
-  crawl:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    for ca in $CATEGORIES; do
+      for page in 0 1 2 3 4 5; do
+        FILE="output/html/${ca}_${page}.html"
+        URL="https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php?ca=$ca&rpage=$page&row_num=28"
 
-    steps:
-      - uses: actions/checkout@v4
+        echo "[INFO] Fetching ▶ ca=$ca page=$page"
 
-      - name: Prepare directories
-        run: |
-          mkdir -p output/html
-          mkdir -p output/log
+        curl -L --compressed \
+          --retry 2 \
+          --connect-timeout 10 \
+          --max-time 25 \
+          -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+          -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+          -H "Accept-Language: ko-KR,ko;q=0.9" \
+          -H "Accept-Encoding: gzip, deflate, br" \
+          -H "Connection: keep-alive" \
+          "$URL" \
+          -o "$FILE"
 
-      - name: Fetch Visit Pages
-        run: |
-          set +e
+        if [ ! -f "$FILE" ]; then
+          echo "[ERROR] Curl failed ▶ ca=$ca page=$page" | tee -a output/log/error.log
+          continue
+        fi
 
-          CATEGORIES="20"
+        SIZE=$(wc -c < "$FILE")
 
-          for ca in $CATEGORIES; do
-            for page in 0 1; do
-              echo "[INFO] Fetching ca=$ca page=$page"
+        if [ "$SIZE" -lt 5000 ]; then
+          echo "[WARN] Too small (${SIZE} bytes) ▶ ca=$ca page=$page" | tee -a output/log/blocked.log
+          rm -f "$FILE"
+          continue
+        fi
 
-              FILE="output/html/${ca}_${page}.html"
-
-              curl -L --compressed \
-                --retry 2 \
-                --connect-timeout 10 \
-                --max-time 25 \
-                -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-                -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8" \
-                -H "Accept-Language: ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7" \
-                -H "Accept-Encoding: gzip, deflate, br" \
-                -H "Connection: keep-alive" \
-                -H "Upgrade-Insecure-Requests: 1" \
-                -H "Sec-Fetch-Site: same-origin" \
-                -H "Sec-Fetch-Mode: navigate" \
-                -H "Sec-Fetch-User: ?1" \
-                -H "Sec-Fetch-Dest: document" \
-                "https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php?ca=$ca&rpage=$page&row_num=28" \
-                -o "$FILE"
-
-              # 차단 페이지 판별
-              if grep -qiE "checking the connection|checking the proxy|firewall" "$FILE"; then
-                echo "[WARN] Blocked ca=$ca page=$page" | tee -a output/log/blocked.log
-                rm -f "$FILE"
-              else
-                SIZE=$(wc -c < "$FILE")
-                echo "[OK] Saved ca=$ca page=$page (${SIZE} bytes)"
-              fi
-
-              sleep 2
-            done
-          done
-
-      - name: Zip result
-        run: |
-          zip -r stylec_visit_html.zip output
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: stylec-visit-html
-          path: stylec_visit_html.zip
+        if grep -qiE "checking the connection|checking the proxy|firewall" "$FIL
