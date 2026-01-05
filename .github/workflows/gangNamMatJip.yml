@@ -4,41 +4,33 @@ on:
   workflow_dispatch:
 
 jobs:
-  fetch:
+  crawl:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Chrome & Selenium
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
-          pip install selenium webdriver-manager
-
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
+          pip install -r crawl/requirements.txt
 
-      # - name: Fetch HTML using Selenium
-      #   run: |
-      #     python fetch.py
+      - name: Run Selenium Crawl
+        run: python crawl/crawl.py
 
-      - name: Run fetch
-        run: python -u fetch.py
+      - name: Parse HTML
+        run: python crawl/parse.py
 
       - name: Zip result
         run: |
-          zip -r stylec_html.zip html_cache
+          zip -r gangnammatjip_result.zip output
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gangNamMatJip-html
-          path: gangNamMatJip_html.zip
+          name: gangnammatjip-result
+          path: gangnammatjip_result.zip
