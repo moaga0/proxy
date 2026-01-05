@@ -1,4 +1,4 @@
-name: GangNamMatJip Crawl
+name: GangNamMatJip Crawl (Proxy)
 
 on:
   workflow_dispatch:
@@ -8,34 +8,56 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Prepare directories
         run: |
           mkdir -p output/html
 
-      - name: Fetch Visit Pages
+      - name: Fetch Visit Pages (via Proxy)
+        env:
+          PROXY: 142.111.48.253:7030   # 👉 여기 프록시 교체
         run: |
+          echo "[INFO] Using proxy: $PROXY"
+
           for ca in 2005 2010 2015 2020 2025 2030 2035; do
-            for page in 0 1 2 3 4 5; do
+            for page in 0 1 2; do
+              url="https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php?ca=$ca&rpage=$page&row_num=28"
+              out="output/html/${ca}_${page}.html"
+
               echo "[INFO] Fetching ca=$ca page=$page"
-              curl -L --max-time 20 \
-                -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
-                -H "Accept-Language: ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7" \
-                "https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php?ca=$ca&rpage=$page&row_num=28" \
-                -o "output/html/${ca}_${page}.html" \
-                || echo "[WARN] Failed ca=$ca page=$page"
-              sleep 1
+
+              curl -L \
+                -x http://$PROXY \
+                --connect-timeout 10 \
+                --max-time 20 \
+                -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36" \
+                -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+                -H "Accept-Language: ko-KR,ko;q=0.9,en-US;q=0.8" \
+                -H "Connection: keep-alive" \
+                "$url" \
+                -o "$out" || true
+
+              size=$(stat -c%s "$out" 2>/dev/null || echo 0)
+
+              if [ "$size" -lt 1000 ]; then
+                echo "[WARN] Failed ca=$ca page=$page (size=$size)"
+                rm -f "$out"
+              else
+                echo "[OK] Saved ca=$ca page=$page (${size} bytes)"
+              fi
+
+              sleep 2
             done
           done
 
-      - name: Zip result
+      - name: Zip HTML
         run: |
-          zip -r output_html.zip output
+          zip -r gangnammatjip_html.zip output/html
 
-      - name: Upload artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: gangnammatjip-html
-          path: output_html.zip
+          path: gangnammatjip_html.zip
