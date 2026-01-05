@@ -73,43 +73,46 @@ def fetch_pages():
     driver = create_driver()
 
     try:
-        for ca in VISIT_CATEGORIES:
-            for page in range(MAX_PAGE):
-                url = f"{BASE_URL}?ca={ca}&rpage={page}&row_num=28"
-                output_path = f"{OUTPUT_DIR}/{ca}_{page}.html"
+for ca in VISIT_CATEGORIES:
+    for page in range(MAX_PAGE):
+        url = f"{BASE_URL}?ca={ca}&rpage={page}&row_num=28"
+        output_path = f"{OUTPUT_DIR}/{ca}_{page}.html"
 
-                logger.info(f"Fetching ▶ ca={ca}, page={page}")
+        logger.info(f"Fetching ▶ ca={ca}, page={page}")
 
-                try:
-                    start = time.time()
-                    driver.get(url)
+        try:
+            start = time.time()
+            try:
+                driver.get(url)
+            except TimeoutException:
+                logger.warning(
+                    f"Timeout 발생, 로딩 중단 ▶ ca={ca}, page={page}"
+                )
+                driver.execute_script("window.stop();")
 
-                    html = driver.page_source
-                    if not html or len(html) < 1000:
-                        logger.warning(
-                            f"Empty or short HTML ▶ ca={ca}, page={page}"
-                        )
-                        continue
+            html = driver.page_source
 
-                    with open(output_path, "w", encoding="utf-8") as f:
-                        f.write(html)
+            if not html or len(html) < 300:
+                logger.warning(
+                    f"HTML 비정상 ▶ ca={ca}, page={page}, size={len(html) if html else 0}"
+                )
+                continue
 
-                    elapsed = round(time.time() - start, 2)
-                    size_kb = round(len(html.encode("utf-8")) / 1024, 1)
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(html)
 
-                    logger.info(
-                        f"Saved ▶ {output_path} ({size_kb} KB, {elapsed}s)"
-                    )
+            elapsed = round(time.time() - start, 2)
+            size_kb = round(len(html.encode("utf-8")) / 1024, 1)
 
-                except TimeoutException as e:
-                    logger.error(
-                        f"페이지 수집 실패 ▶ ca={ca}, page={page}, timeout"
-                    )
+            logger.info(
+                f"Saved ▶ {output_path} ({size_kb} KB, {elapsed}s)"
+            )
 
-                except WebDriverException as e:
-                    logger.error(
-                        f"페이지 수집 실패 ▶ ca={ca}, page={page}, error={e}"
-                    )
+        except Exception as e:
+            logger.error(
+                f"페이지 수집 실패 ▶ ca={ca}, page={page}, error={e}"
+            )
+
 
     finally:
         driver.quit()
