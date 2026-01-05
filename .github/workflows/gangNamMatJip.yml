@@ -1,63 +1,34 @@
-name: GangNamMatJip Crawl (Proxy)
+name: Fetch Visit Pages
 
 on:
   workflow_dispatch:
 
 jobs:
-  crawl:
+  fetch:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Prepare directories
-        run: |
-          mkdir -p output/html
-
-      - name: Fetch Visit Pages (via Proxy)
+      - name: Fetch Visit Pages via Webshare Proxy
         env:
-          PROXY: 142.111.48.253:7030   # 👉 여기 프록시 교체
+          PROXY_HOST: ${{ secrets.PROXY_HOST }}
+          PROXY_PORT: ${{ secrets.PROXY_PORT }}
+          PROXY_USER: ${{ secrets.PROXY_USER }}
+          PROXY_PASS: ${{ secrets.PROXY_PASS }}
         run: |
-          echo "[INFO] Using proxy: $PROXY"
+          echo "▶ Start fetching with Webshare proxy"
 
-          for ca in 2005 2010 2015 2020 2025 2030 2035; do
-            for page in 0 1 2; do
-              url="https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php?ca=$ca&rpage=$page&row_num=28"
-              out="output/html/${ca}_${page}.html"
+          TARGET_URL="https://xn--939au0g4vj8sq.net"
 
-              echo "[INFO] Fetching ca=$ca page=$page"
+          curl -v \
+            -x http://${PROXY_USER}:${PROXY_PASS}@${PROXY_HOST}:${PROXY_PORT} \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
+            -H "Accept: text/html,application/xhtml+xml" \
+            --connect-timeout 20 \
+            --max-time 30 \
+            --retry 2 \
+            --retry-delay 3 \
+            "$TARGET_URL" \
+            -o response.html
 
-              curl -L \
-                -x http://$PROXY \
-                --connect-timeout 10 \
-                --max-time 20 \
-                -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36" \
-                -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
-                -H "Accept-Language: ko-KR,ko;q=0.9,en-US;q=0.8" \
-                -H "Connection: keep-alive" \
-                "$url" \
-                -o "$out" || true
-
-              size=$(stat -c%s "$out" 2>/dev/null || echo 0)
-
-              if [ "$size" -lt 1000 ]; then
-                echo "[WARN] Failed ca=$ca page=$page (size=$size)"
-                rm -f "$out"
-              else
-                echo "[OK] Saved ca=$ca page=$page (${size} bytes)"
-              fi
-
-              sleep 2
-            done
-          done
-
-      - name: Zip HTML
-        run: |
-          zip -r gangnammatjip_html.zip output/html
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: gangnammatjip-html
-          path: gangnammatjip_html.zip
+          echo "▶ Response saved"
+          ls -lh response.html
