@@ -1,126 +1,111 @@
 import os
 import time
 import logging
-
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from webdriver_manager.chrome import ChromeDriverManager
 
-
-# =========================
+# =====================
 # 기본 설정
-# =========================
+# =====================
 BASE_URL = "https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php"
 OUTPUT_DIR = "output/html"
 
-VISIT_CATEGORIES = ["2005", "2010", "2015", "2020", "2025", "2030", "2035"]
-MAX_PAGE = 1   # ✅ 0,1,2까지만
+VISIT_CA = [2005, 2010, 2015, 2020, 2025, 2030, 2035]
+SHIPPING_CA = [3005, 3010, 3015, 3020, 3030]
+PAGES = range(0, 1)
+
+PAGE_TIMEOUT = 15
+RETRY = 2
+SLEEP = 0.5
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+# =====================
+# 로그 설정
+# =====================
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
-logger = logging.getLogger(__name__)
 
+# =====================
+# Chrome 옵션
+# =====================
+chrome_options = Options()
+chrome_options.add_argument("--headless=new")
+chrome_options.add_argument("--no-sandbox")
+chrome_options.add_argument("--disable-dev-shm-usage")
+chrome_options.add_argument("--disable-gpu")
+chrome_options.add_argument("--window-size=1920,1080")
+chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
-# =========================
-# Chrome Driver 생성
-# =========================
-def create_driver() -> webdriver.Chrome:
-    options = Options()
+# 리소스 로딩 차단 (속도 핵심)
+prefs = {
+    "profile.managed_default_content_settings.images": 2,
+    "profile.managed_default_content_settings.fonts": 2,
+    "profile.managed_default_content_settings.stylesheets": 2,
+}
+chrome_options.add_experimental_option("prefs", prefs)
 
-    # Headless
-    options.add_argument("--headless=new")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
+# eager 로딩
+chrome_options.page_load_strategy = "eager"
 
-    # ✅ 1️⃣ 리소스 차단
-    prefs = {
-        "profile.managed_default_content_settings.images": 2,
-        "profile.managed_default_content_settings.stylesheets": 2,
-        "profile.managed_default_content_settings.fonts": 2,
-        "profile.managed_default_content_settings.cookies": 2,
-        "profile.managed_default_content_settings.plugins": 2,
-        "profile.managed_default_content_settings.popups": 2,
-        "profile.managed_default_content_settings.geolocation": 2,
-        "profile.managed_default_content_settings.notifications": 2,
-    }
-    options.add_experimental_option("prefs", prefs)
+# =====================
+# 드라이버 생성
+# =====================
+driver = webdriver.Chrome(
+    service=Service(ChromeDriverManager().install()),
+    options=chrome_options
+)
+driver.set_page_load_timeout(PAGE_TIMEOUT)
 
-    # ✅ 2️⃣ eager 로딩
-    options.page_load_strategy = "eager"
+# =====================
+# 수집 함수
+# =====================
+def fetch(ca: int, page: int):
+    url = f"{BASE_URL}?ca={ca}&rpage={page}&row_num=28"
+    filename = f"{OUTPUT_DIR}/{ca}_{page}.html"
 
-    service = Service(ChromeDriverManager().install())
-
-    driver = webdriver.Chrome(service=service, options=options)
-
-    # ✅ 3️⃣ timeout 최소화
-    driver.set_page_load_timeout(20)
-    driver.implicitly_wait(3)
-
-    return driver
-
-
-# =========================
-# 페이지 수집
-# =========================
-def fetch_pages():
-    driver = create_driver()
-
-    try:
-for ca in VISIT_CATEGORIES:
-    for page in range(MAX_PAGE):
-        url = f"{BASE_URL}?ca={ca}&rpage={page}&row_num=28"
-        output_path = f"{OUTPUT_DIR}/{ca}_{page}.html"
-
-        logger.info(f"Fetching ▶ ca={ca}, page={page}")
-
+    for attempt in range(1, RETRY + 2):
         try:
-            start = time.time()
-            try:
-                driver.get(url)
-            except TimeoutException:
-                logger.warning(
-                    f"Timeout 발생, 로딩 중단 ▶ ca={ca}, page={page}"
-                )
-                driver.execute_script("window.stop();")
+            logging.info(f"Fetching ▶ ca={ca}, page={page} (try {attempt})")
+            driver.get(url)
 
             html = driver.page_source
-
-            if not html or len(html) < 300:
-                logger.warning(
-                    f"HTML 비정상 ▶ ca={ca}, page={page}, size={len(html) if html else 0}"
-                )
-                continue
-
-            with open(output_path, "w", encoding="utf-8") as f:
+            with open(filename, "w", encoding="utf-8") as f:
                 f.write(html)
 
-            elapsed = round(time.time() - start, 2)
-            size_kb = round(len(html.encode("utf-8")) / 1024, 1)
+            size_kb = os.path.getsize(filename) // 1024
+            logging.info(f"Saved ▶ {filename} ({size_kb} KB)")
+            return
 
-            logger.info(
-                f"Saved ▶ {output_path} ({size_kb} KB, {elapsed}s)"
-            )
+        except TimeoutException:
+            logging.warning(f"Timeout ▶ ca={ca}, page={page}")
 
-        except Exception as e:
-            logger.error(
-                f"페이지 수집 실패 ▶ ca={ca}, page={page}, error={e}"
-            )
+        except WebDriverException as e:
+            logging.error(f"WebDriver error ▶ {e}")
 
+        time.sleep(1)
 
-    finally:
-        driver.quit()
-        logger.info("Driver closed")
+    logging.error(f"페이지 수집 실패 ▶ ca={ca}, page={page}")
 
+# =====================
+# 실행
+# =====================
+try:
+    for ca in VISIT_CA:
+        for page in PAGES:
+            fetch(ca, page)
+            time.sleep(SLEEP)
 
-# =========================
-# Entry Point
-# =========================
-if __name__ == "__main__":
-    fetch_pages()
+    for ca in SHIPPING_CA:
+        for page in PAGES:
+            fetch(ca, page)
+            time.sleep(SLEEP)
+
+finally:
+    driver.quit()
+    logging.info("크롤링 종료 (정상 종료)")
