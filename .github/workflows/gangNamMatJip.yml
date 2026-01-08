@@ -1,7 +1,9 @@
-name: GangNamMatJip Crawl (Playwright)
+name: Playwright Crawl
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:   # 수동 실행
+  # schedule:
+  #   - cron: "0 1 * * *"   # 매일 10시 KST (UTC 01)
 
 jobs:
   crawl:
@@ -17,89 +19,18 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install Playwright
+      - name: Install dependencies
         run: |
-          npm init -y
           npm install playwright
-          npx playwright install chromium
+          npx playwright install --with-deps
 
-      - name: Create fetch script
+      - name: Run Playwright crawler
         run: |
-          cat << 'EOF' > fetch.js
-          const { chromium } = require('playwright');
-          const fs = require('fs');
-          const path = require('path');
+          node crawl.js
 
-          const BASE_URL = 'https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php';
-          const VISIT_CATEGORIES = ['2005','2010','2015','2020','2025','2030','2035'];
-          const MAX_PAGE = 20;
-
-          (async () => {
-            const browser = await chromium.launch({
-              headless: true,
-              args: [
-                '--disable-blink-features=AutomationControlled',
-                '--no-sandbox'
-              ]
-            });
-
-            const context = await browser.newContext({
-              userAgent:
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-                'AppleWebKit/537.36 (KHTML, like Gecko) ' +
-                'Chrome/122.0.0.0 Safari/537.36',
-              viewport: { width: 1280, height: 800 },
-              locale: 'ko-KR'
-            });
-
-            const page = await context.newPage();
-            await page.addInitScript(() => {
-              Object.defineProperty(navigator, 'webdriver', { get: () => false });
-            });
-
-            for (const ca of VISIT_CATEGORIES) {
-              for (let p = 0; p <= MAX_PAGE; p++) {
-                const url = `${BASE_URL}?ca=${ca}&rpage=${p}&row_num=28`;
-                const outDir = path.join('output', 'visit');
-                const outFile = path.join(outDir, `${ca}_${p}.html`);
-
-                fs.mkdirSync(outDir, { recursive: true });
-
-                console.log(`[INFO] Fetching ▶ ca=${ca}, page=${p}`);
-
-                try {
-                  await page.goto(url, { timeout: 20000, waitUntil: 'networkidle' });
-                  await page.waitForTimeout(1200); // 인간 흉내
-
-                  const html = await page.content();
-
-                  // Cloudflare 차단 페이지 필터
-                  if (html.includes('Checking the connection')) {
-                    throw new Error('Blocked page detected');
-                  }
-
-                  fs.writeFileSync(outFile, html, 'utf-8');
-                  console.log(`[OK] Saved ▶ ${outFile} (${html.length} bytes)`);
-                } catch (e) {
-                  console.warn(`[WARN] Failed ▶ ca=${ca}, page=${p} (${e.message})`);
-                  break; // 해당 카테고리 종료
-                }
-              }
-            }
-
-            await browser.close();
-          })();
-          EOF
-
-      - name: Run crawler
-        run: node fetch.js
-
-      - name: Zip result
-        run: |
-          zip -r gangnam_html.zip output
-
-      - name: Upload artifact
+      - name: Upload HTML result
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gangnam-html
-          path: gangnam_html.zip
+          name: crawl-html
+          path: output/html
