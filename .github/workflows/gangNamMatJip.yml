@@ -1,9 +1,7 @@
-name: Playwright Crawl
+name: Visit Crawler
 
 on:
-  workflow_dispatch:   # 수동 실행
-  # schedule:
-  #   - cron: "0 1 * * *"   # 매일 10시 KST (UTC 01)
+  workflow_dispatch:
 
 jobs:
   crawl:
@@ -14,23 +12,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Install dependencies
         run: |
+          npm init -y
           npm install playwright
-          npx playwright install --with-deps
 
-      - name: Run Playwright crawler
-        run: |
-          node crawl.js
+      - name: Install Playwright browsers
+        run: npx playwright install chromium
 
-      - name: Upload HTML result
-        if: always()
+      - name: Run crawler
+        run: node crawl.js
+
+      - name: Upload result
         uses: actions/upload-artifact@v4
         with:
-          name: crawl-html
+          name: visit-html
           path: output/html
