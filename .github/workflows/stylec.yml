@@ -31,7 +31,7 @@ jobs:
           for ((p=1; p<=${{ inputs.visitMaxPage }}; p++)); do
             echo "Fetching Visit Trials Page $p"
             RES=$(curl -s -H "User-Agent: Mozilla/5.0" -H "Referer: https://www.stylec.co.kr/" \
-              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%B0%B0%EB%8B%AC%ED%98%95&campaignType[]=%EB%B0%A9%EB%AC%B8%ED%98%95&include_finish=false")
+              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%B0%A9%EB%AC%B8%ED%98%95&include_finish=false")
 
             COUNT=$(echo "$RES" | jq '.data.data | length')
             if [ "$COUNT" -eq 0 ]; then
