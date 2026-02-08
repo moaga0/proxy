@@ -1,4 +1,50 @@
-- name: Debug Proxy
-  run: |
-    echo "PROXY_URL=$PROXY_URL"
-    curl -x "$PROXY_URL" https://ipinfo.io || echo "⚠️ PROXY TEST FAILED"
+name: check-webshare-proxy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-proxy:
+    runs-on: ubuntu-latest
+
+    env:
+      PROXY_URL: "http://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
+
+    steps:
+      - name: Print proxy (보안상 일부 마스킹)
+        run: |
+          echo "PROXY_HOST=${{ secrets.PROXY_HOST }}"
+          echo "PROXY_PORT=${{ secrets.PROXY_PORT }}"
+          echo "PROXY_USER=${{ secrets.PROXY_USER }}"
+          echo "PROXY_PASS=******"
+
+      - name: Test 1) 단순 연결 테스트
+        run: |
+          echo "=== TEST 1: Basic connectivity ==="
+          curl -x "$PROXY_URL" -I https://www.google.com || echo "❌ 연결 실패"
+
+      - name: Test 2) 내 IP 확인 (핵심 체크)
+        run: |
+          echo "=== TEST 2: Check public IP via proxy ==="
+          curl -s -x "$PROXY_URL" https://ipinfo.io/json | jq -r '{ip, city, country, org}'
+
+      - name: Test 3) FourBlog 접속 테스트
+        run: |
+          echo "=== TEST 3: Access FourBlog via proxy ==="
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -x "$PROXY_URL" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64)" \
+            "https://4blog.net/loadMoreDataCategory?offset=0&limit=30&category=all&category1=local&location=&location1=&search=&bid=")
+
+          echo "FourBlog HTTP Status: $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ FourBlog 접근 실패"
+            exit 1
+          fi
+
+      - name: Test 4) 실제 JSON 응답 미리보기
+        run: |
+          echo "=== TEST 4: Preview response ==="
+          curl -s -x "$PROXY_URL" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64)" \
+            "https://4blog.net/loadMoreDataCategory?offset=0&limit=5&category=all&category1=local&location=&location1=&search=&bid=" | jq '.[0]' || echo "❌ JSON 파싱 실패"
