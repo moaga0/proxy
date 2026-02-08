@@ -1,0 +1,4 @@
+- name: Debug Proxy
+  run: |
+    echo "PROXY_URL=$PROXY_URL"
+    curl -x "$PROXY_URL" https://ipinfo.io || echo "⚠️ PROXY TEST FAILED"
