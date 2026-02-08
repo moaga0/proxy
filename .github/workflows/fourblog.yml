@@ -1,4 +1,4 @@
-name: fourblog-crawler
+name: fourblog-crawl
 
 on:
   workflow_dispatch:
@@ -10,81 +10,118 @@ on:
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     env:
-      PROXY_USER: ${{ secrets.PROXY_USER }}
-      PROXY_PASS: ${{ secrets.PROXY_PASS }}
-      PROXY_HOST: ${{ secrets.PROXY_HOST }}
-      PROXY_URL: "http://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:80"
+      PROXY_URL: "http://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:{{ secrets.PROXY_PORT }}"
 
     steps:
-      - name: Checkout (dummy)
-        run: echo "No repo needed, just crawling"
+      - uses: actions/checkout@v3
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq curl
+          sudo apt-get install -y jq unzip
 
-      - name: Initialize result.json
+      - name: Prepare workspace
         run: |
-          echo '{
-            "visit": { "pages": [] }
-          }' > result.json
+          mkdir -p tmp/visit tmp/shipping
+          echo '{"visit":{"pages":[]}, "shipping":{"pages":[]}}' > result.json
 
-      - name: Prepare temp folders
+      - name: Debug Proxy (필수 체크)
         run: |
-          mkdir -p tmp/visit
+          echo "PROXY_URL=$PROXY_URL"
+          curl -x "$PROXY_URL" https://ipinfo.io || echo "⚠️ PROXY TEST FAILED"
 
-      - name: Crawl Fourblog VISIT Trials (With Proxy + Retry)
+      # ======================
+      # VISIT (local)
+      # ======================
+      - name: Crawl FourBlog VISIT (local)
         run: |
           set -e
 
           for ((p=1; p<=${{ inputs.maxPage }}; p++)); do
-            echo "🚀 Fetching VISIT page $p"
+            OFFSET=$(( (p - 1) * 30 ))
+            echo "🚀 Fetching VISIT page $p (offset=$OFFSET)"
 
-            # 프록시로 목록 가져오기 (최대 3회 재시도)
-            for i in {1..3}; do
-              RES=$(curl -s -x "$PROXY_URL" \
-                -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
-                -H "Referer: https://www.fourblog.co.kr/" \
-                "https://4blog.net/loadMoreDataCategory?offset=$p&limit=30&category=all&category1=local&location=&location1=&search=&bid=")
+            URL="https://4blog.net/loadMoreDataCategory?offset=$OFFSET&limit=30&category=all&category1=local&location=&location1=&search=&bid="
 
-              COUNT=$(echo "$RES" | jq '.data.data | length' 2>/dev/null || echo 0)
+            RES=$(curl -s -x "$PROXY_URL" \
+              -w "\nHTTP_STATUS:%{http_code}" \
+              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64)" \
+              "$URL" || true)
 
-              if [ "$COUNT" -gt 0 ]; then
-                break
-              fi
+            BODY=$(echo "$RES" | sed -n '1,/HTTP_STATUS:/p' | sed '$d')
+            STATUS=$(echo "$RES" | grep "HTTP_STATUS:" | awk -F: '{print $2}')
 
-              echo "⚠️ Retry $i/3 for page $p (possible IP block)"
-              sleep 5
-            done
+            echo "➡️ HTTP Status: $STATUS"
 
-            if [ "$COUNT" -eq 0 ]; then
-              echo "🛑 No more data. Stop crawling."
+            if [ "$STATUS" != "200" ]; then
+              echo "🛑 Stop crawling (status != 200)"
               break
             fi
 
-            echo "$RES" | jq -r '.data.data[].wr_id' | \
-              xargs -n1 -P20 -I{} sh -c "
-                curl -s -x \"$PROXY_URL\" \
-                  -H 'User-Agent: Mozilla/5.0' \
-                  -H 'Referer: https://www.fourblog.co.kr/' \
-                  'https://api.fourblog.co.kr/v1/trial/detail?wr_id={}' > tmp/visit/{}.json
-              "
+            COUNT=$(echo "$BODY" | jq 'length' 2>/dev/null || echo 0)
+            if [ "$COUNT" -eq 0 ]; then
+              echo "⛔ No more data. Stop."
+              break
+            fi
 
-            jq -s '.' tmp/visit/*.json > tmp/visit_page_${p}.json
+            echo "$BODY" > tmp/visit_page_${p}.json
 
             jq --arg p "$p" --slurpfile pageData tmp/visit_page_${p}.json \
-              '.visit.pages += [{\"page\": ($p|tonumber), \"data\": $pageData[0]}]' result.json > tmp.json
+              '.visit.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
 
             mv tmp.json result.json
-            rm tmp/visit/*.json
           done
 
-      - name: Upload result.json
-        uses: actions/upload-artifact@v4
+      # ======================
+      # SHIPPING (deliv)
+      # ======================
+      - name: Crawl FourBlog SHIPPING (deliv)
+        run: |
+          set -e
+
+          for ((p=1; p<=${{ inputs.maxPage }}; p++)); do
+            OFFSET=$(( (p - 1) * 30 ))
+            echo "🚀 Fetching SHIPPING page $p (offset=$OFFSET)"
+
+            URL="https://4blog.net/loadMoreDataCategory?offset=$OFFSET&limit=30&category=all&category1=deliv&location=&location1=&search=&bid="
+
+            RES=$(curl -s -x "$PROXY_URL" \
+              -w "\nHTTP_STATUS:%{http_code}" \
+              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64)" \
+              "$URL" || true)
+
+            BODY=$(echo "$RES" | sed -n '1,/HTTP_STATUS:/p' | sed '$d')
+            STATUS=$(echo "$RES" | grep "HTTP_STATUS:" | awk -F: '{print $2}')
+
+            echo "➡️ HTTP Status: $STATUS"
+
+            if [ "$STATUS" != "200" ]; then
+              echo "🛑 Stop crawling (status != 200)"
+              break
+            fi
+
+            COUNT=$(echo "$BODY" | jq 'length' 2>/dev/null || echo 0)
+            if [ "$COUNT" -eq 0 ]; then
+              echo "⛔ No more data. Stop."
+              break
+            fi
+
+            echo "$BODY" > tmp/shipping_page_${p}.json
+
+            jq --arg p "$p" --slurpfile pageData tmp/shipping_page_${p}.json \
+              '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
+
+            mv tmp.json result.json
+          done
+
+      - name: Create artifact
+        run: |
+          zip -r fourblog-result.zip result.json
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
         with:
           name: fourblog-result
-          path: result.json
+          path: fourblog-result.zip
