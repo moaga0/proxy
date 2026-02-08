@@ -16,7 +16,7 @@ jobs:
       PROXY_USER: ${{ secrets.PROXY_USER }}
       PROXY_PASS: ${{ secrets.PROXY_PASS }}
       PROXY_HOST: ${{ secrets.PROXY_HOST }}
-      PROXY_URL: "http://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:6540"
+      PROXY_URL: "http://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:80"
 
     steps:
       - name: Checkout (dummy)
