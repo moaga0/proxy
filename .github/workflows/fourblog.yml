@@ -27,6 +27,8 @@ jobs:
       WEBSHARE_PROXY_PORT: "${{ secrets.PROXY_PORT }}"
       WEBSHARE_PROXY_USER: "${{ secrets.PROXY_USER }}"
       WEBSHARE_PROXY_PASS: "${{ secrets.PROXY_PASS }}"
+      run: |
+      echo "Using proxy: $PROXY_HOST"
 
     steps:
       - name: Install dependencies
