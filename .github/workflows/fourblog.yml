@@ -1,0 +1,124 @@
+# ==========================================
+# FourBlog 수집용 GitHub Actions (프록시 사용 버전)
+# - 스타일C 구조를 참고한 아티팩트 기반 수집
+# - Webshare 무료 프록시 사용 (HTTP)
+# ==========================================
+name: fourblog-crawler
+
+on:
+  workflow_dispatch:
+    inputs:
+      visitMaxPage:
+        required: true
+        default: "10"
+      shippingMaxPage:
+        required: true
+        default: "20"
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      # ===== Webshare 프록시 설정 (필수로 본인 계정 정보로 교체) =====
+      # https://www.webshare.io/ 에서 확인 가능
+      WEBSHARE_PROXY_HOST: "proxy.webshare.io"
+      WEBSHARE_PROXY_PORT: "80"
+      WEBSHARE_PROXY_USER: "${{ secrets.PROXY_USER }}"
+      WEBSHARE_PROXY_PASS: "${{ secrets.PROXY_PASS }}"
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl unzip
+
+      - name: Initialize result.json
+        run: |
+          echo '{
+            "visit": { "pages": [] },
+            "shipping": { "pages": [] }
+          }' > result.json
+
+      - name: Prepare temp folders
+        run: |
+          mkdir -p tmp/visit tmp/shipping
+
+      # ===============================
+      # Visit(방문형) 수집
+      # ===============================
+      - name: Crawl FourBlog VISIT (local)
+        run: |
+          for ((p=1; p<=${{ inputs.visitMaxPage }}; p++)); do
+            echo "Fetching VISIT page $p"
+
+            RES=$(curl -s \
+              -x "$WEBSHARE_PROXY_HOST:$WEBSHARE_PROXY_PORT" \
+              -U "$WEBSHARE_PROXY_USER:$WEBSHARE_PROXY_PASS" \
+              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36" \
+              "https://4blog.net/loadMoreDataCategory?offset=$(( (p-1)*30 ))&limit=30&category=all&category1=local&location=&location1=&search=&bid=")
+
+            COUNT=$(echo "$RES" | jq 'length')
+            if [ "$COUNT" -eq 0 ]; then
+              echo "No more VISIT data, stopping."
+              break
+            fi
+
+            # 목록에서 cid 추출 후 상세 병렬 조회 (최대 15개)
+            echo "$RES" | jq -r '.[].cid' | xargs -n1 -P15 -I{} sh -c "
+              curl -s \
+                -x '$WEBSHARE_PROXY_HOST:$WEBSHARE_PROXY_PORT' \
+                -U '$WEBSHARE_PROXY_USER:$WEBSHARE_PROXY_PASS' \
+                -H 'User-Agent: Mozilla/5.0' \
+                'https://4blog.net/campaign/{}' > tmp/visit/{}.html
+            "
+
+            # 페이지 단위로 묶기 (HTML 그대로 저장)
+            jq -s '.' tmp/visit/*.html > tmp/visit_page_${p}.json
+            jq --arg p "$p" --slurpfile pageData tmp/visit_page_${p}.json \
+               '.visit.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
+            mv tmp.json result.json
+            rm tmp/visit/*.html
+          done
+
+      # ===============================
+      # Shipping(배송형) 수집
+      # ===============================
+      - name: Crawl FourBlog SHIPPING (deliv)
+        run: |
+          for ((p=1; p<=${{ inputs.shippingMaxPage }}; p++)); do
+            echo "Fetching SHIPPING page $p"
+
+            RES=$(curl -s \
+              -x "$WEBSHARE_PROXY_HOST:$WEBSHARE_PROXY_PORT" \
+              -U "$WEBSHARE_PROXY_USER:$WEBSHARE_PROXY_PASS" \
+              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36" \
+              "https://4blog.net/loadMoreDataCategory?offset=$(( (p-1)*30 ))&limit=30&category=all&category1=deliv&location=&location1=&search=&bid=")
+
+            COUNT=$(echo "$RES" | jq 'length')
+            if [ "$COUNT" -eq 0 ]; then
+              echo "No more SHIPPING data, stopping."
+              break
+            fi
+
+            echo "$RES" | jq -r '.[].cid' | xargs -n1 -P15 -I{} sh -c "
+              curl -s \
+                -x '$WEBSHARE_PROXY_HOST:$WEBSHARE_PROXY_PORT' \
+                -U '$WEBSHARE_PROXY_USER:$WEBSHARE_PROXY_PASS' \
+                -H 'User-Agent: Mozilla/5.0' \
+                'https://4blog.net/campaign/{}' > tmp/shipping/{}.html
+            "
+
+            jq -s '.' tmp/shipping/*.html > tmp/shipping_page_${p}.json
+            jq --arg p "$p" --slurpfile pageData tmp/shipping_page_${p}.json \
+               '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
+            mv tmp.json result.json
+            rm tmp/shipping/*.html
+          done
+
+      - name: Upload result.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: fourblog-result
+          path: result.json
