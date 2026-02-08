@@ -121,7 +121,7 @@ jobs:
           zip -r fourblog-result.zip result.json
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: fourblog-result
           path: fourblog-result.zip
