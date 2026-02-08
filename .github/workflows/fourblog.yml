@@ -16,7 +16,7 @@ jobs:
       PROXY_USER: ${{ secrets.PROXY_USER }}
       PROXY_PASS: ${{ secrets.PROXY_PASS }}
       PROXY_HOST: ${{ secrets.PROXY_HOST }}
-      PROXY_URL: "http://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:80"
+      PROXY_URL: "http://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:6540"
 
     steps:
       - name: Checkout (dummy)
@@ -49,7 +49,7 @@ jobs:
               RES=$(curl -s -x "$PROXY_URL" \
                 -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
                 -H "Referer: https://www.fourblog.co.kr/" \
-                "https://api.fourblog.co.kr/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=방문형&include_finish=false")
+                "https://4blog.net/loadMoreDataCategory?offset=$p&limit=30&category=all&category1=local&location=&location1=&search=&bid=")
 
               COUNT=$(echo "$RES" | jq '.data.data | length' 2>/dev/null || echo 0)
 
