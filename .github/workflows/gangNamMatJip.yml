@@ -1,35 +1,51 @@
-name: Visit Crawler
+name: GangNamMatJip Crawl
 
 on:
   workflow_dispatch:
 
+env:
+  PROXY_URL: "http://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
+
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install dependencies
+      - name: Prepare directories
         run: |
-          npm init -y
-          npm install playwright
+          mkdir -p output/html
 
-      - name: Install Playwright browsers
-        run: npx playwright install chromium
+      - name: Fetch Visit Pages (via Webshare Proxy)
+        run: |
+          echo "[INFO] Using proxy: ${PROXY_URL}"
 
-      - name: Run crawler
-        run: node crawl.js
+          for ca in 2005 2010 2015 2020 2025 2030 2035; do
+            for page in 0 1 2 3 4 5; do
+              echo "[INFO] Fetching ca=$ca page=$page"
 
-      - name: Upload result
+              curl -L --max-time 25 \
+                -x "$PROXY_URL" \
+                -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
+                -H "Accept: text/html,application/xhtml+xml" \
+                -H "Accept-Language: ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7" \
+                -H "Referer: https://xn--939au0g4vj8sq.net/" \
+                "https://xn--939au0g4vj8sq.net/theme/go/_list_cmp_tpl.php?ca=$ca&rpage=$page&row_num=28" \
+                -o "output/html/${ca}_${page}.html" \
+                || echo "[WARN] Failed ca=$ca page=$page"
+
+              sleep 2
+            done
+          done
+
+      - name: Zip result
+        run: |
+          zip -r output_html.zip output
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: visit-html
-          path: output/html
+          name: gangnammatjip-html
+          path: output_html.zip
