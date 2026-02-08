@@ -20,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq unzip
+          sudo apt-get install -y jq
 
       - name: Prepare workspace
         run: |
@@ -116,13 +116,12 @@ jobs:
             mv tmp.json result.json
           done
 
-      - name: Create artifact
-        run: |
-          zip -r fourblog-result.zip result.json
-
-      - name: Upload artifact
+      # ======================
+      # JSON 그대로 업로드
+      # ======================
+      - name: Upload artifact (JSON)
         uses: actions/upload-artifact@v4
         with:
-          name: fourblog-result
-          path: fourblog-result.zip
+          name: fourblog-result-json
+          path: result.json
           if-no-files-found: error
