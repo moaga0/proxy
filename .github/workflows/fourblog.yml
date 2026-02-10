@@ -12,7 +12,10 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      PROXY_URL: "socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
+      PROXY_LIST: |
+        "socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
+        "socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST_2 }}:${{ secrets.PROXY_PORT_2 }}"
+        "socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST_3 }}:${{ secrets.PROXY_PORT_3 }}"
 
     steps:
       - uses: actions/checkout@v4
@@ -20,16 +23,88 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq
+          sudo apt-get install -y jq curl
 
       - name: Prepare workspace
         run: |
           mkdir -p tmp/visit tmp/shipping
           echo '{"visit":{"pages":[]}, "shipping":{"pages":[]}}' > result.json
 
-      - name: Debug Proxy (필수 체크)
+      - name: Prepare proxy rotation + UA + backoff script
         run: |
-          echo "PROXY_URL=$PROXY_URL"
+          cat << 'EOF' > crawler_utils.sh
+          #!/bin/bash
+
+          # ======== PROXY ROTATION ========
+          mapfile -t RAW_PROXIES <<< "$PROXY_LIST"
+
+          PROXIES=()
+          for p in "${RAW_PROXIES[@]}"; do
+            CLEAN=$(echo "$p" | sed 's/^"//;s/"$//')
+            if [ -n "$CLEAN" ]; then
+              PROXIES+=("$CLEAN")
+            fi
+          done
+
+          IDX_FILE="/tmp/proxy_idx"
+          BAD_PROXIES_FILE="/tmp/bad_proxies"
+
+          touch "$BAD_PROXIES_FILE"
+
+          if [ ! -f "$IDX_FILE" ]; then
+            echo 0 > "$IDX_FILE"
+          fi
+
+          get_next_proxy() {
+            local start_idx=$(cat "$IDX_FILE")
+            local idx=$start_idx
+
+            for i in "${!PROXIES[@]}"; do
+              local p="${PROXIES[$idx]}"
+
+              if ! grep -q "$p" "$BAD_PROXIES_FILE"; then
+                echo "$p"
+                echo $(( (idx + 1) % ${#PROXIES[@]} )) > "$IDX_FILE"
+                return
+              fi
+
+              idx=$(( (idx + 1) % ${#PROXIES[@]} ))
+            done
+
+            echo "ERROR_NO_PROXY"
+          }
+
+          mark_bad_proxy() {
+            echo "$1" >> "$BAD_PROXIES_FILE"
+          }
+
+          # ======== RANDOM USER-AGENT ========
+          get_random_ua() {
+            UA_LIST=(
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/537.36 Chrome/119.0.0.0 Safari/537.36"
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edg/120.0.0.0"
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15"
+            )
+
+            echo "${UA_LIST[$((RANDOM % ${#UA_LIST[@]}))]}"
+          }
+
+          # ======== BACKOFF ON 429 ========
+          backoff_sleep() {
+            local base=$(( RANDOM % 10 + 10 )) # 10~19초
+            echo "⏳ Backoff sleep: ${base}s"
+            sleep $base
+          }
+
+          EOF
+
+          chmod +x crawler_utils.sh
+
+      - name: Debug initial proxy
+        run: |
+          PROXY_URL=$(./crawler_utils.sh get_next_proxy)
+          echo "First PROXY_URL=$PROXY_URL"
           curl -x "$PROXY_URL" https://ipinfo.io || echo "⚠️ PROXY TEST FAILED"
 
       # ======================
@@ -43,20 +118,42 @@ jobs:
             OFFSET=$(( (p - 1) * 30 ))
             echo "🚀 Fetching VISIT page $p (offset=$OFFSET)"
 
-            URL="https://4blog.net/loadMoreDataCategory?offset=$OFFSET&limit=30&category=all&category1=local&location=&location1=&search=&bid="
+            RETRY=0
+            MAX_RETRY=3
 
-            RES=$(curl -s -x "$PROXY_URL" \
-              -w "\nHTTP_STATUS:%{http_code}" \
-              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64)" \
-              "$URL" || true)
+            while [ $RETRY -lt $MAX_RETRY ]; do
+              PROXY_URL=$(./crawler_utils.sh get_next_proxy)
+              UA=$(./crawler_utils.sh get_random_ua)
 
-            BODY=$(echo "$RES" | sed -n '1,/HTTP_STATUS:/p' | sed '$d')
-            STATUS=$(echo "$RES" | grep "HTTP_STATUS:" | awk -F: '{print $2}')
+              echo "🔁 Using proxy: $PROXY_URL"
+              echo "🌐 UA: $UA"
 
-            echo "➡️ HTTP Status: $STATUS"
+              URL="https://4blog.net/loadMoreDataCategory?offset=$OFFSET&limit=30&category=all&category1=local&location=&location1=&search=&bid="
+
+              RES=$(curl -s -x "$PROXY_URL" \
+                -w "\nHTTP_STATUS:%{http_code}" \
+                -H "User-Agent: $UA" \
+                "$URL" || true)
+
+              STATUS=$(echo "$RES" | grep "HTTP_STATUS:" | awk -F: '{print $2}')
+              BODY=$(echo "$RES" | sed -n '1,/HTTP_STATUS:/p' | sed '$d')
+
+              echo "➡️ HTTP Status: $STATUS"
+
+              if [ "$STATUS" = "200" ]; then
+                break
+              elif [ "$STATUS" = "429" ]; then
+                ./crawler_utils.sh backoff_sleep
+              else
+                echo "⚠️ Bad proxy, rotating..."
+                ./crawler_utils.sh mark_bad_proxy "$PROXY_URL"
+              fi
+
+              RETRY=$((RETRY+1))
+            done
 
             if [ "$STATUS" != "200" ]; then
-              echo "🛑 Stop crawling (status != 200)"
+              echo "🛑 Give up this page after retries"
               break
             fi
 
@@ -73,9 +170,8 @@ jobs:
 
             mv tmp.json result.json
 
-            # ✅ 랜덤 3~5초 대기 (봇 의심 회피)
-            SLEEP_SEC=$(( RANDOM % 3 + 3 ))  # 3,4,5초 중 랜덤
-            echo "😴 Sleep ${SLEEP_SEC}s before next VISIT request..."
+            SLEEP_SEC=$(( RANDOM % 3 + 3 ))
+            echo "😴 Sleep ${SLEEP_SEC}s..."
             sleep $SLEEP_SEC
           done
 
@@ -90,20 +186,42 @@ jobs:
             OFFSET=$(( (p - 1) * 30 ))
             echo "🚀 Fetching SHIPPING page $p (offset=$OFFSET)"
 
-            URL="https://4blog.net/loadMoreDataCategory?offset=$OFFSET&limit=30&category=all&category1=deliv&location=&location1=&search=&bid="
+            RETRY=0
+            MAX_RETRY=3
 
-            RES=$(curl -s -x "$PROXY_URL" \
-              -w "\nHTTP_STATUS:%{http_code}" \
-              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64)" \
-              "$URL" || true)
+            while [ $RETRY -lt $MAX_RETRY ]; do
+              PROXY_URL=$(./crawler_utils.sh get_next_proxy)
+              UA=$(./crawler_utils.sh get_random_ua)
 
-            BODY=$(echo "$RES" | sed -n '1,/HTTP_STATUS:/p' | sed '$d')
-            STATUS=$(echo "$RES" | grep "HTTP_STATUS:" | awk -F: '{print $2}')
+              echo "🔁 Using proxy: $PROXY_URL"
+              echo "🌐 UA: $UA"
 
-            echo "➡️ HTTP Status: $STATUS"
+              URL="https://4blog.net/loadMoreDataCategory?offset=$OFFSET&limit=30&category=all&category1=deliv&location=&location1=&search=&bid="
+
+              RES=$(curl -s -x "$PROXY_URL" \
+                -w "\nHTTP_STATUS:%{http_code}" \
+                -H "User-Agent: $UA" \
+                "$URL" || true)
+
+              STATUS=$(echo "$RES" | grep "HTTP_STATUS:" | awk -F: '{print $2}')
+              BODY=$(echo "$RES" | sed -n '1,/HTTP_STATUS:/p' | sed '$d')
+
+              echo "➡️ HTTP Status: $STATUS"
+
+              if [ "$STATUS" = "200" ]; then
+                break
+              elif [ "$STATUS" = "429" ]; then
+                ./crawler_utils.sh backoff_sleep
+              else
+                echo "⚠️ Bad proxy, rotating..."
+                ./crawler_utils.sh mark_bad_proxy "$PROXY_URL"
+              fi
+
+              RETRY=$((RETRY+1))
+            done
 
             if [ "$STATUS" != "200" ]; then
-              echo "🛑 Stop crawling (status != 200)"
+              echo "🛑 Give up this page after retries"
               break
             fi
 
@@ -120,15 +238,11 @@ jobs:
 
             mv tmp.json result.json
 
-            # ✅ 랜덤 3~5초 대기 (봇 의심 회피)
-            SLEEP_SEC=$(( RANDOM % 3 + 3 ))  # 3,4,5초 중 랜덤
-            echo "😴 Sleep ${SLEEP_SEC}s before next SHIPPING request..."
+            SLEEP_SEC=$(( RANDOM % 3 + 3 ))
+            echo "😴 Sleep ${SLEEP_SEC}s..."
             sleep $SLEEP_SEC
           done
 
-      # ======================
-      # JSON 그대로 업로드
-      # ======================
       - name: Upload artifact (JSON)
         uses: actions/upload-artifact@v4
         with:
