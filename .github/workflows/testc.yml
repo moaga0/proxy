@@ -1,0 +1,69 @@
+name: stylec-trial-crawl
+
+on:
+  workflow_dispatch:
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+
+    env:
+      PROXY_URL: "http://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare output directories
+        run: |
+          mkdir -p output/stylec
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq zip
+
+      - name: Fetch StyleC Trial API via Proxy
+        run: |
+          echo "===== START: STYLEC TRIAL CRAWL ====="
+
+          BASE_URL="https://api2.stylec.co.kr:6439/v1/trial"
+
+          for p in 1 2 3 4 5 6 7 8 9 10; do
+            echo "[INFO] Fetching page=$p"
+
+            URL="${BASE_URL}?order=wr_last&page=${p}&count=50\&campaignType[]=%EB%AF%B8%EC%85%98%2F%EC%9D%B8%EC%A6%9D\&campaignType[]=%EB%B0%B0%EB%8B%AC%ED%98%95\&campaignType[]=%EA%B5%AC%EB%A7%A4%ED%8F%89\&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%EF%BC%8B%EA%B5%AC%EB%A7%A4%ED%8F%89\&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%ED%98%95\&include_finish=false"
+
+            STATUS=$(curl -s -o "output/stylec/page_${p}.json" \
+              -w "%{http_code}" \
+              -x "$PROXY_URL" \
+              --max-time 25 \
+              --retry 2 \
+              --retry-delay 3 \
+              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64)" \
+              -H "Accept: application/json, text/plain, */*" \
+              -H "Accept-Language: ko-KR,ko;q=0.9,en-US;q=0.8" \
+              -H "Origin: https://stylec.co.kr" \
+              -H "Referer: https://stylec.co.kr/" \
+              "$URL")
+
+            FILE_SIZE=$(stat -c%s "output/stylec/page_${p}.json")
+
+            if [ "$STATUS" != "200" ] || [ "$FILE_SIZE" -lt 500 ]; then
+              echo "[WARN] Failed ▶ page=$p (status=$STATUS, size=$FILE_SIZE)"
+            else
+              echo "[OK] Saved ▶ output/stylec/page_${p}.json (${FILE_SIZE} bytes)"
+            fi
+
+            sleep 1
+          done
+
+      - name: Zip result
+        run: |
+          zip -r stylec_trial_json.zip output/stylec
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stylec-trial-json
+          path: stylec_trial_json.zip
