@@ -52,7 +52,7 @@ jobs:
             fi
 
             # 병렬 다운로드 20개
-            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -n1 -P20 -I{} sh -c \
+            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P20 -I{} sh -c \
               "curl -s -x "$PROXY_URL" -H 'User-Agent:  Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36' -H 'Referer: https://www.stylec.co.kr/' \
                'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/visit/{}.json"
 
@@ -78,7 +78,7 @@ jobs:
             fi
 
             # 병렬 다운로드 20개
-            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -n1 -P20 -I{} sh -c \
+            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P20 -I{} sh -c \
               "curl -s -x "$PROXY_URL" -H 'User-Agent: Mozilla/5.0' -H 'Referer: https://www.stylec.co.kr/' \
                'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/shipping/{}.json"
 
