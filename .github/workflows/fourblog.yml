@@ -14,9 +14,9 @@ jobs:
     env:
       # ====== 프록시 풀 (회전용) ======
       PROXY_LIST: |
-        socks5h://${{ secrets.PROXY_USER_1 }}:${{ secrets.PROXY_PASS_1 }}@${{ secrets.PROXY_HOST_1 }}:${{ secrets.PROXY_PORT_1 }}
-        socks5h://${{ secrets.PROXY_USER_2 }}:${{ secrets.PROXY_PASS_2 }}@${{ secrets.PROXY_HOST_2 }}:${{ secrets.PROXY_PORT_2 }}
-        socks5h://${{ secrets.PROXY_USER_3 }}:${{ secrets.PROXY_PASS_3 }}@${{ secrets.PROXY_HOST_3 }}:${{ secrets.PROXY_PORT_3 }}
+        socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}
+        socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST_2 }}:${{ secrets.PROXY_PORT_2 }}
+        socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST_3 }}:${{ secrets.PROXY_PORT_3 }}
 
     steps:
       - uses: actions/checkout@v4
