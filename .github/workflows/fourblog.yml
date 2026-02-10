@@ -32,16 +32,21 @@ jobs:
           echo '{"visit":{"pages":[]}, "shipping":{"pages":[]}}' > result.json
 
       # ============================
-      # 세션 단위 UA + 프록시 선정
+      # 세션 단위 UA + 프록시 선정 (완전 자급자족)
       # ============================
       - name: Select Session UA & Proxy
         id: session
         run: |
-          # 랜덤 User-Agent (세션당 1회)
-          SELECTED_UA=$(./crawler_utils.sh get_random_ua)
+          # ===== User-Agent 풀 (필요하면 확장 가능) =====
+          UA_LIST='
+          Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (Chrome/120.0.0.0 Safari/537.36)
+          Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/605.1.15 (Version/16.6 Safari/605.1.15)
+          Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0
+          Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/537.36 (Chrome/121.0.0.0 Safari/537.36)
+          '
 
-          # 프록시 풀에서 랜덤 1개 선택
-          SELECTED_PROXY=$(echo "$PROXY_LIST" | shuf -n 1 | tr -d '[:space:]')
+          SELECTED_UA=$(echo "$UA_LIST" | sed '/^$/d' | shuf -n 1 | sed 's/^ *//;s/ *$//')
+          SELECTED_PROXY=$(echo "$PROXY_LIST" | sed '/^$/d' | shuf -n 1 | sed 's/^ *//;s/ *$//')
 
           echo "SELECTED_UA=$SELECTED_UA" >> $GITHUB_OUTPUT
           echo "SELECTED_PROXY=$SELECTED_PROXY" >> $GITHUB_OUTPUT
