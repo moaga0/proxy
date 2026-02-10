@@ -14,14 +14,13 @@ jobs:
   crawl:
     runs-on: ubuntu-latest
 
+
     env:
-      PROXY_LIST: |
-        socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}
-        socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST_2 }}:${{ secrets.PROXY_PORT_2 }}
-        socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST_3 }}:${{ secrets.PROXY_PORT_3 }}
+      PROXY_URL: "socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -39,45 +38,11 @@ jobs:
         run: |
           mkdir -p tmp/visit tmp/shipping
 
-      # ==============================
-      # 세션 단위 UA + 프록시 선택
-      # ==============================
-      - name: Select Session UA & Proxy
-        id: session
-        run: |
-          UA_LIST='
-          Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (Chrome/120.0.0.0 Safari/537.36)
-          Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/605.1.15 (Version/16.6 Safari/605.1.15)
-          Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0
-          Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/537.36 (Chrome/121.0.0.0 Safari/537.36)
-          '
-
-          SELECTED_UA=$(echo "$UA_LIST" | sed '/^$/d' | shuf -n 1 | sed 's/^ *//;s/ *$//')
-          SELECTED_PROXY=$(echo "$PROXY_LIST" | sed '/^$/d' | shuf -n 1 | sed 's/^ *//;s/ *$//')
-
-          echo "SELECTED_UA=$SELECTED_UA" >> $GITHUB_OUTPUT
-          echo "SELECTED_PROXY=$SELECTED_PROXY" >> $GITHUB_OUTPUT
-
-          echo "🧑‍💻 Session UA: $SELECTED_UA"
-          echo "🌐 Session Proxy: $SELECTED_PROXY"
-
-      - name: Debug Proxy
-        run: |
-          echo "Testing proxy: ${{ steps.session.outputs.SELECTED_PROXY }}"
-          curl -x "${{ steps.session.outputs.SELECTED_PROXY }}" https://ipinfo.io || echo "⚠️ PROXY TEST FAILED"
-
-      # ==============================
-      # VISIT 크롤링
-      # ==============================
       - name: Crawl Visit Trials with Details (Parallel)
         run: |
           for ((p=1; p<=${{ inputs.visitMaxPage }}; p++)); do
             echo "Fetching Visit Trials Page $p"
-
-            RES=$(curl -s \
-              -x "${{ steps.session.outputs.SELECTED_PROXY }}" \
-              -A "${{ steps.session.outputs.SELECTED_UA }}" \
-              -H "Referer: https://www.stylec.co.kr/" \
+            RES=$(curl -s -x "$PROXY_URL" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36" -H "Referer: https://www.stylec.co.kr/" \
               "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%B0%A9%EB%AC%B8%ED%98%95&include_finish=false")
 
             COUNT=$(echo "$RES" | jq '.data.data | length')
@@ -86,14 +51,12 @@ jobs:
               break
             fi
 
-            # 병렬 상세 다운로드 (20개)
+            # 병렬 다운로드 20개
             echo "$RES" | jq -r '.data.data[].wr_id' | xargs -n1 -P20 -I{} sh -c \
-              "curl -s \
-                -x '${{ steps.session.outputs.SELECTED_PROXY }}' \
-                -A '${{ steps.session.outputs.SELECTED_UA }}' \
-                -H 'Referer: https://www.stylec.co.kr/' \
-                'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/visit/{}.json"
+              "curl -s -x "$PROXY_URL" -H 'User-Agent:  Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36' -H 'Referer: https://www.stylec.co.kr/' \
+               'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/visit/{}.json"
 
+            # 페이지 단위 합치기
             jq -s '.' tmp/visit/*.json > tmp/visit_page_${p}.json
             jq --arg p "$p" --slurpfile pageData tmp/visit_page_${p}.json \
                '.visit.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
@@ -101,18 +64,11 @@ jobs:
             rm tmp/visit/*.json
           done
 
-      # ==============================
-      # SHIPPING 크롤링
-      # ==============================
       - name: Crawl Shipping Trials with Details (Parallel)
         run: |
           for ((p=1; p<=${{ inputs.shippingMaxPage }}; p++)); do
             echo "Fetching Shipping Trials Page $p"
-
-            RES=$(curl -s \
-              -x "${{ steps.session.outputs.SELECTED_PROXY }}" \
-              -A "${{ steps.session.outputs.SELECTED_UA }}" \
-              -H "Referer: https://www.stylec.co.kr/" \
+            RES=$(curl -s -x "$PROXY_URL" -H "User-Agent:  Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36" -H "Referer: https://www.stylec.co.kr/" \
               "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%AF%B8%EC%85%98%2F%EC%9D%B8%EC%A6%9D&campaignType[]=%EB%B0%B0%EB%8B%AC%ED%98%95&campaignType[]=%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%EF%BC%8B%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%ED%98%95&include_finish=false")
 
             COUNT=$(echo "$RES" | jq '.data.data | length')
@@ -121,13 +77,12 @@ jobs:
               break
             fi
 
+            # 병렬 다운로드 20개
             echo "$RES" | jq -r '.data.data[].wr_id' | xargs -n1 -P20 -I{} sh -c \
-              "curl -s \
-                -x '${{ steps.session.outputs.SELECTED_PROXY }}' \
-                -A '${{ steps.session.outputs.SELECTED_UA }}' \
-                -H 'Referer: https://www.stylec.co.kr/' \
-                'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/shipping/{}.json"
+              "curl -s -x "$PROXY_URL" -H 'User-Agent: Mozilla/5.0' -H 'Referer: https://www.stylec.co.kr/' \
+               'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/shipping/{}.json"
 
+            # 페이지 단위 합치기
             jq -s '.' tmp/shipping/*.json > tmp/shipping_page_${p}.json
             jq --arg p "$p" --slurpfile pageData tmp/shipping_page_${p}.json \
                '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
