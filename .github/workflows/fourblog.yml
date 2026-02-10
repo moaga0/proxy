@@ -12,10 +12,11 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      # ====== 프록시 풀 (회전용) ======
       PROXY_LIST: |
-        socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}
-        socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST_2 }}:${{ secrets.PROXY_PORT_2 }}
-        socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST_3 }}:${{ secrets.PROXY_PORT_3 }}
+        socks5h://${{ secrets.PROXY_USER_1 }}:${{ secrets.PROXY_PASS_1 }}@${{ secrets.PROXY_HOST_1 }}:${{ secrets.PROXY_PORT_1 }}
+        socks5h://${{ secrets.PROXY_USER_2 }}:${{ secrets.PROXY_PASS_2 }}@${{ secrets.PROXY_HOST_2 }}:${{ secrets.PROXY_PORT_2 }}
+        socks5h://${{ secrets.PROXY_USER_3 }}:${{ secrets.PROXY_PASS_3 }}@${{ secrets.PROXY_HOST_3 }}:${{ secrets.PROXY_PORT_3 }}
 
     steps:
       - uses: actions/checkout@v4
@@ -31,33 +32,27 @@ jobs:
           echo '{"visit":{"pages":[]}, "shipping":{"pages":[]}}' > result.json
 
       # ============================
-      # 🔹 단 1회: 프록시 1개 선택
+      # 세션 단위 UA + 프록시 선정
       # ============================
-      - name: Select SINGLE proxy (fixed for whole job)
+      - name: Select Session UA & Proxy
+        id: session
         run: |
-          PROXY_URL=$(echo "$PROXY_LIST" | shuf -n 1)
-          echo "SELECTED_PROXY=$PROXY_URL" >> $GITHUB_ENV
-          echo "✅ Selected proxy: $PROXY_URL"
+          # 랜덤 User-Agent (세션당 1회)
+          SELECTED_UA=$(./crawler_utils.sh get_random_ua)
 
-      # ============================
-      # 🔹 단 1회: User-Agent 선택
-      # ============================
-      - name: Select SINGLE User-Agent (fixed)
-        run: |
-          UA_LIST=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64) AppleWebKit/537.36 (Chrome/120.0.0.0 Safari/537.36)"
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/605.1.15 (Safari/17.0)"
-            "Mozilla/5.0 (Windows NT 10.0; Win64) AppleWebKit/537.36 (Edg/120.0.0.0)"
-          )
+          # 프록시 풀에서 랜덤 1개 선택
+          SELECTED_PROXY=$(echo "$PROXY_LIST" | shuf -n 1 | tr -d '[:space:]')
 
-          UA=${UA_LIST[$RANDOM % ${#UA_LIST[@]}]}
-          echo "SELECTED_UA=$UA" >> $GITHUB_ENV
-          echo "✅ Selected User-Agent: $UA"
+          echo "SELECTED_UA=$SELECTED_UA" >> $GITHUB_OUTPUT
+          echo "SELECTED_PROXY=$SELECTED_PROXY" >> $GITHUB_OUTPUT
+
+          echo "🧑‍💻 Session UA: $SELECTED_UA"
+          echo "🌐 Session Proxy: $SELECTED_PROXY"
 
       - name: Debug Proxy (필수 체크)
         run: |
-          echo "Using PROXY=$SELECTED_PROXY"
-          curl -x "$SELECTED_PROXY" https://ipinfo.io || echo "⚠️ PROXY TEST FAILED"
+          echo "Testing proxy: ${{ steps.session.outputs.SELECTED_PROXY }}"
+          curl -x "${{ steps.session.outputs.SELECTED_PROXY }}" https://ipinfo.io || echo "⚠️ PROXY TEST FAILED"
 
       # ======================
       # VISIT (local)
@@ -72,9 +67,10 @@ jobs:
 
             URL="https://4blog.net/loadMoreDataCategory?offset=$OFFSET&limit=30&category=all&category1=local&location=&location1=&search=&bid="
 
-            RES=$(curl -s -x "$SELECTED_PROXY" \
+            RES=$(curl -s \
+              -x "${{ steps.session.outputs.SELECTED_PROXY }}" \
+              -A "${{ steps.session.outputs.SELECTED_UA }}" \
               -w "\nHTTP_STATUS:%{http_code}" \
-              -H "User-Agent: $SELECTED_UA" \
               "$URL" || true)
 
             BODY=$(echo "$RES" | sed -n '1,/HTTP_STATUS:/p' | sed '$d')
@@ -100,9 +96,9 @@ jobs:
 
             mv tmp.json result.json
 
-            # ✅ 랜덤 대기 (3~5초)
-            SLEEP_SEC=$(( RANDOM % 3 + 3 ))
-            echo "😴 Sleep ${SLEEP_SEC}s..."
+            # ✅ 사람처럼 3~5초 랜덤 대기
+            SLEEP_SEC=$((RANDOM % 3 + 3))
+            echo "😴 Sleeping ${SLEEP_SEC}s..."
             sleep $SLEEP_SEC
           done
 
@@ -119,9 +115,10 @@ jobs:
 
             URL="https://4blog.net/loadMoreDataCategory?offset=$OFFSET&limit=30&category=all&category1=deliv&location=&location1=&search=&bid="
 
-            RES=$(curl -s -x "$SELECTED_PROXY" \
+            RES=$(curl -s \
+              -x "${{ steps.session.outputs.SELECTED_PROXY }}" \
+              -A "${{ steps.session.outputs.SELECTED_UA }}" \
               -w "\nHTTP_STATUS:%{http_code}" \
-              -H "User-Agent: $SELECTED_UA" \
               "$URL" || true)
 
             BODY=$(echo "$RES" | sed -n '1,/HTTP_STATUS:/p' | sed '$d')
@@ -147,9 +144,9 @@ jobs:
 
             mv tmp.json result.json
 
-            # ✅ 랜덤 대기 (3~5초)
-            SLEEP_SEC=$(( RANDOM % 3 + 3 ))
-            echo "😴 Sleep ${SLEEP_SEC}s..."
+            # ✅ 동일한 대기 전략 적용
+            SLEEP_SEC=$((RANDOM % 3 + 3))
+            echo "😴 Sleeping ${SLEEP_SEC}s..."
             sleep $SLEEP_SEC
           done
 
