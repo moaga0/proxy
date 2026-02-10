@@ -72,6 +72,11 @@ jobs:
               '.visit.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
 
             mv tmp.json result.json
+
+            # ✅ 랜덤 3~5초 대기 (봇 의심 회피)
+            SLEEP_SEC=$(( RANDOM % 3 + 3 ))  # 3,4,5초 중 랜덤
+            echo "😴 Sleep ${SLEEP_SEC}s before next VISIT request..."
+            sleep $SLEEP_SEC
           done
 
       # ======================
@@ -114,6 +119,11 @@ jobs:
               '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
 
             mv tmp.json result.json
+
+            # ✅ 랜덤 3~5초 대기 (봇 의심 회피)
+            SLEEP_SEC=$(( RANDOM % 3 + 3 ))  # 3,4,5초 중 랜덤
+            echo "😴 Sleep ${SLEEP_SEC}s before next SHIPPING request..."
+            sleep $SLEEP_SEC
           done
 
       # ======================
