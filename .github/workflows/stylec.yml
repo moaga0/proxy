@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       visitMaxPage:
-        required: true
+        required: false
         default: "5"
       shippingMaxPage:
-        required: true
+        required: false
         default: "6"
 
 jobs:
@@ -18,7 +18,8 @@ jobs:
       PROXY_URL: "socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
       STYLEC_COOKIE: "${{ secrets.STYLEC_COOKIE }}"
       UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
-
+      VISIT_MAX: ${{ inputs.visitMaxPage || '5' }}
+      SHIPPING_MAX: ${{ inputs.shippingMaxPage || '6' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
