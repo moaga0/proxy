@@ -39,6 +39,41 @@ jobs:
         run: |
           mkdir -p tmp/visit tmp/shipping
 
+      - name: Create helper script (detail + share slink)
+        run: |
+          cat > fetch_detail_and_slink.sh <<'BASH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          WRID="$1"
+          OUTFILE="$2"
+
+          DETAIL="$(curl -sS -x "$PROXY_URL" \
+            -H "User-Agent: $UA" \
+            -H "Referer: https://www.stylec.co.kr/" \
+            "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=${WRID}")"
+
+          SHARE="$(curl -sS -x "$PROXY_URL" \
+            -H "User-Agent: $UA" \
+            -H "Cookie: $STYLEC_COOKIE" \
+            -H "Origin: https://www.stylec.co.kr" \
+            -H "Referer: https://www.stylec.co.kr/trials/${WRID}" \
+            --data-urlencode "pagePath=/trials/${WRID}" \
+            "https://www.stylec.co.kr/api/util/modal.share.php" || true)"
+
+          SLINK="$(echo "$SHARE" | jq -r '.slink // empty' 2>/dev/null || true)"
+
+          echo "$DETAIL" | jq --arg slink "$SLINK" '
+            if (.data? and (.data | type) == "object") then
+              .data.slink = $slink
+            else
+              .slink = $slink
+            end
+          ' > "$OUTFILE"
+          BASH
+
+          chmod +x fetch_detail_and_slink.sh
+
       - name: Crawl Visit Trials with Details + slink (Parallel)
         run: |
           set -euo pipefail
@@ -56,39 +91,11 @@ jobs:
               break
             fi
 
-            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P2 -I{} bash -c '
-              set -euo pipefail
-              WRID="{}"
+            echo "$RES" | jq -r '.data.data[].wr_id' \
+              | xargs -P2 -n1 -I{} ./fetch_detail_and_slink.sh {} "tmp/visit/{}.json"
 
-              # 1) 상세 데이터
-              DETAIL=$(curl -sS -x "$PROXY_URL" \
-                -H "User-Agent: $UA" \
-                -H "Referer: https://www.stylec.co.kr/" \
-                "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=${WRID}")
-
-              # 2) 공유 모달(slilnk) 데이터
-              SHARE=$(curl -sS -x "$PROXY_URL" \
-                -H "User-Agent: $UA" \
-                -H "Cookie: $STYLEC_COOKIE" \
-                -H "Origin: https://www.stylec.co.kr" \
-                -H "Referer: https://www.stylec.co.kr/trials/${WRID}" \
-                --data-urlencode "pagePath=/trials/${WRID}" \
-                "https://www.stylec.co.kr/api/util/modal.share.php" || true)
-
-              SLINK=$(echo "$SHARE" | jq -r ".slink // empty" 2>/dev/null || true)
-
-              # 3) 합치기: data.slink로 주입
-              echo "$DETAIL" | jq --arg slink "$SLINK" '
-                if (.data? and .data | type=="object") then
-                  .data.slink = $slink
-                else
-                  .slink = $slink
-                end
-              ' > "tmp/visit/${WRID}.json"
-            '
-
-            jq -s '.' tmp/visit/*.json > tmp/visit_page_${p}.json
-            jq --arg p "$p" --slurpfile pageData tmp/visit_page_${p}.json \
+            jq -s '.' tmp/visit/*.json > "tmp/visit_page_${p}.json"
+            jq --arg p "$p" --slurpfile pageData "tmp/visit_page_${p}.json" \
               '.visit.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
             mv tmp.json result.json
             rm -f tmp/visit/*.json
@@ -111,36 +118,11 @@ jobs:
               break
             fi
 
-            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P2 -I{} bash -c '
-              set -euo pipefail
-              WRID="{}"
+            echo "$RES" | jq -r '.data.data[].wr_id' \
+              | xargs -P2 -n1 -I{} ./fetch_detail_and_slink.sh {} "tmp/shipping/{}.json"
 
-              DETAIL=$(curl -sS -x "$PROXY_URL" \
-                -H "User-Agent: $UA" \
-                -H "Referer: https://www.stylec.co.kr/" \
-                "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=${WRID}")
-
-              SHARE=$(curl -sS -x "$PROXY_URL" \
-                -H "User-Agent: $UA" \
-                -H "Cookie: $STYLEC_COOKIE" \
-                -H "Origin: https://www.stylec.co.kr" \
-                -H "Referer: https://www.stylec.co.kr/trials/${WRID}" \
-                --data-urlencode "pagePath=/trials/${WRID}" \
-                "https://www.stylec.co.kr/api/util/modal.share.php" || true)
-
-              SLINK=$(echo "$SHARE" | jq -r ".slink // empty" 2>/dev/null || true)
-
-              echo "$DETAIL" | jq --arg slink "$SLINK" '
-                if (.data? and .data | type=="object") then
-                  .data.slink = $slink
-                else
-                  .slink = $slink
-                end
-              ' > "tmp/shipping/${WRID}.json"
-            '
-
-            jq -s '.' tmp/shipping/*.json > tmp/shipping_page_${p}.json
-            jq --arg p "$p" --slurpfile pageData tmp/shipping_page_${p}.json \
+            jq -s '.' tmp/shipping/*.json > "tmp/shipping_page_${p}.json"
+            jq --arg p "$p" --slurpfile pageData "tmp/shipping_page_${p}.json" \
               '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
             mv tmp.json result.json
             rm -f tmp/shipping/*.json
