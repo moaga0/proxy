@@ -14,9 +14,10 @@ jobs:
   crawl:
     runs-on: ubuntu-latest
 
-
     env:
       PROXY_URL: "socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
+      STYLEC_COOKIE: "${{ secrets.STYLEC_COOKIE }}"
+      UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
 
     steps:
       - name: Checkout
@@ -38,11 +39,15 @@ jobs:
         run: |
           mkdir -p tmp/visit tmp/shipping
 
-      - name: Crawl Visit Trials with Details (Parallel)
+      - name: Crawl Visit Trials with Details + slink (Parallel)
         run: |
+          set -euo pipefail
+
           for ((p=1; p<=${{ inputs.visitMaxPage }}; p++)); do
             echo "Fetching Visit Trials Page $p"
-            RES=$(curl -s -x "$PROXY_URL" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36" -H "Referer: https://www.stylec.co.kr/" \
+            RES=$(curl -sS -x "$PROXY_URL" \
+              -H "User-Agent: $UA" \
+              -H "Referer: https://www.stylec.co.kr/" \
               "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%B0%A9%EB%AC%B8%ED%98%95&include_finish=false")
 
             COUNT=$(echo "$RES" | jq '.data.data | length')
@@ -51,24 +56,53 @@ jobs:
               break
             fi
 
-            # 병렬 다운로드 2개
-            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P2 -I{} sh -c \
-              "curl -s -x "$PROXY_URL" -H 'User-Agent:  Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36' -H 'Referer: https://www.stylec.co.kr/' \
-               'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/visit/{}.json"
+            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P2 -I{} bash -c '
+              set -euo pipefail
+              WRID="{}"
 
-            # 페이지 단위 합치기
+              # 1) 상세 데이터
+              DETAIL=$(curl -sS -x "$PROXY_URL" \
+                -H "User-Agent: $UA" \
+                -H "Referer: https://www.stylec.co.kr/" \
+                "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=${WRID}")
+
+              # 2) 공유 모달(slilnk) 데이터
+              SHARE=$(curl -sS -x "$PROXY_URL" \
+                -H "User-Agent: $UA" \
+                -H "Cookie: $STYLEC_COOKIE" \
+                -H "Origin: https://www.stylec.co.kr" \
+                -H "Referer: https://www.stylec.co.kr/trials/${WRID}" \
+                --data-urlencode "pagePath=/trials/${WRID}" \
+                "https://www.stylec.co.kr/api/util/modal.share.php" || true)
+
+              SLINK=$(echo "$SHARE" | jq -r ".slink // empty" 2>/dev/null || true)
+
+              # 3) 합치기: data.slink로 주입
+              echo "$DETAIL" | jq --arg slink "$SLINK" '
+                if (.data? and .data | type=="object") then
+                  .data.slink = $slink
+                else
+                  .slink = $slink
+                end
+              ' > "tmp/visit/${WRID}.json"
+            '
+
             jq -s '.' tmp/visit/*.json > tmp/visit_page_${p}.json
             jq --arg p "$p" --slurpfile pageData tmp/visit_page_${p}.json \
-               '.visit.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
+              '.visit.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
             mv tmp.json result.json
-            rm tmp/visit/*.json
+            rm -f tmp/visit/*.json
           done
 
-      - name: Crawl Shipping Trials with Details (Parallel)
+      - name: Crawl Shipping Trials with Details + slink (Parallel)
         run: |
+          set -euo pipefail
+
           for ((p=1; p<=${{ inputs.shippingMaxPage }}; p++)); do
             echo "Fetching Shipping Trials Page $p"
-            RES=$(curl -s -x "$PROXY_URL" -H "User-Agent:  Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36" -H "Referer: https://www.stylec.co.kr/" \
+            RES=$(curl -sS -x "$PROXY_URL" \
+              -H "User-Agent: $UA" \
+              -H "Referer: https://www.stylec.co.kr/" \
               "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%AF%B8%EC%85%98%2F%EC%9D%B8%EC%A6%9D&campaignType[]=%EB%B0%B0%EB%8B%AC%ED%98%95&campaignType[]=%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%EF%BC%8B%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%ED%98%95&include_finish=false")
 
             COUNT=$(echo "$RES" | jq '.data.data | length')
@@ -77,17 +111,39 @@ jobs:
               break
             fi
 
-            # 병렬 다운로드 2개
-            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P2 -I{} sh -c \
-              "curl -s -x "$PROXY_URL" -H 'User-Agent: Mozilla/5.0' -H 'Referer: https://www.stylec.co.kr/' \
-               'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/shipping/{}.json"
+            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P2 -I{} bash -c '
+              set -euo pipefail
+              WRID="{}"
 
-            # 페이지 단위 합치기
+              DETAIL=$(curl -sS -x "$PROXY_URL" \
+                -H "User-Agent: $UA" \
+                -H "Referer: https://www.stylec.co.kr/" \
+                "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=${WRID}")
+
+              SHARE=$(curl -sS -x "$PROXY_URL" \
+                -H "User-Agent: $UA" \
+                -H "Cookie: $STYLEC_COOKIE" \
+                -H "Origin: https://www.stylec.co.kr" \
+                -H "Referer: https://www.stylec.co.kr/trials/${WRID}" \
+                --data-urlencode "pagePath=/trials/${WRID}" \
+                "https://www.stylec.co.kr/api/util/modal.share.php" || true)
+
+              SLINK=$(echo "$SHARE" | jq -r ".slink // empty" 2>/dev/null || true)
+
+              echo "$DETAIL" | jq --arg slink "$SLINK" '
+                if (.data? and .data | type=="object") then
+                  .data.slink = $slink
+                else
+                  .slink = $slink
+                end
+              ' > "tmp/shipping/${WRID}.json"
+            '
+
             jq -s '.' tmp/shipping/*.json > tmp/shipping_page_${p}.json
             jq --arg p "$p" --slurpfile pageData tmp/shipping_page_${p}.json \
-               '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
+              '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
             mv tmp.json result.json
-            rm tmp/shipping/*.json
+            rm -f tmp/shipping/*.json
           done
 
       - name: Upload result.json
