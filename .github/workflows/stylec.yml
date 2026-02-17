@@ -1,25 +1,21 @@
 name: stylec-crawler
 
 on:
-  workflow_dispatch:
-    inputs:
-      visitMaxPage:
-        required: false
-        default: "5"
-      shippingMaxPage:
-        required: false
-        default: "6"
+  workflow_dispatch: {}
 
 jobs:
   crawl:
     runs-on: ubuntu-latest
 
     env:
+      # ✅ 여기 두 값만 Actions에서 직접 수정하시면 됩니다.
+      VISIT_MAX_PAGE: "5"
+      SHIPPING_MAX_PAGE: "6"
+
       PROXY_URL: "socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
       STYLEC_COOKIE: "${{ secrets.STYLEC_COOKIE }}"
       UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
-      VISIT_MAX: ${{ inputs.visitMaxPage || '5' }}
-      SHIPPING_MAX: ${{ inputs.shippingMaxPage || '6' }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,7 +36,7 @@ jobs:
         run: |
           mkdir -p tmp/visit tmp/shipping
 
-      - name: Create helper script (detail + share slink)
+      - name: Create helper script (detail + share slink in parallel)
         run: |
           cat > fetch_detail_and_slink.sh <<'BASH'
           #!/usr/bin/env bash
@@ -49,37 +45,48 @@ jobs:
           WRID="$1"
           OUTFILE="$2"
 
-          DETAIL="$(curl -sS -x "$PROXY_URL" \
+          DETAIL_F="$(mktemp)"
+          SHARE_F="$(mktemp)"
+          trap 'rm -f "$DETAIL_F" "$SHARE_F"' EXIT
+
+          # detail / share를 같은 wr_id에 대해 동시에 호출
+          curl -sS -x "$PROXY_URL" \
             -H "User-Agent: $UA" \
             -H "Referer: https://www.stylec.co.kr/" \
-            "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=${WRID}")"
+            "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=${WRID}" \
+            > "$DETAIL_F" &
 
-          SHARE="$(curl -sS -x "$PROXY_URL" \
-            -H "User-Agent: $UA" \
-            -H "Cookie: $STYLEC_COOKIE" \
-            -H "Origin: https://www.stylec.co.kr" \
-            -H "Referer: https://www.stylec.co.kr/trials/${WRID}" \
-            --data-urlencode "pagePath=/trials/${WRID}" \
-            "https://www.stylec.co.kr/api/util/modal.share.php" || true)"
+          # share는 실패해도 전체 파이프라인이 멈추지 않게 처리
+          ( curl -sS -x "$PROXY_URL" \
+              -H "User-Agent: $UA" \
+              -H "Cookie: $STYLEC_COOKIE" \
+              -H "Origin: https://www.stylec.co.kr" \
+              -H "Referer: https://www.stylec.co.kr/trials/${WRID}" \
+              --data-urlencode "pagePath=/trials/${WRID}" \
+              "https://www.stylec.co.kr/api/util/modal.share.php" \
+              > "$SHARE_F" || true ) &
 
-          SLINK="$(echo "$SHARE" | jq -r '.slink // empty' 2>/dev/null || true)"
+          wait
 
-          echo "$DETAIL" | jq --arg slink "$SLINK" '
+          SLINK="$(jq -r '.slink // empty' "$SHARE_F" 2>/dev/null || true)"
+
+          # detail JSON에 data.slink로 주입
+          jq --arg slink "$SLINK" '
             if (.data? and (.data | type) == "object") then
               .data.slink = $slink
             else
               .slink = $slink
             end
-          ' > "$OUTFILE"
+          ' "$DETAIL_F" > "$OUTFILE"
           BASH
 
           chmod +x fetch_detail_and_slink.sh
 
-      - name: Crawl Visit Trials with Details + slink (Parallel)
+      - name: Crawl Visit Trials with Details + slink (Parallel=5)
         run: |
           set -euo pipefail
 
-          for ((p=1; p<=${{ inputs.visitMaxPage }}; p++)); do
+          for ((p=1; p<=${VISIT_MAX_PAGE}; p++)); do
             echo "Fetching Visit Trials Page $p"
             RES=$(curl -sS -x "$PROXY_URL" \
               -H "User-Agent: $UA" \
@@ -93,7 +100,7 @@ jobs:
             fi
 
             echo "$RES" | jq -r '.data.data[].wr_id' \
-              | xargs -P2 -I{} ./fetch_detail_and_slink.sh {} "tmp/visit/{}.json"
+              | xargs -P5 -I{} ./fetch_detail_and_slink.sh {} "tmp/visit/{}.json"
 
             jq -s '.' tmp/visit/*.json > "tmp/visit_page_${p}.json"
             jq --arg p "$p" --slurpfile pageData "tmp/visit_page_${p}.json" \
@@ -102,11 +109,11 @@ jobs:
             rm -f tmp/visit/*.json
           done
 
-      - name: Crawl Shipping Trials with Details + slink (Parallel)
+      - name: Crawl Shipping Trials with Details + slink (Parallel=5)
         run: |
           set -euo pipefail
 
-          for ((p=1; p<=${{ inputs.shippingMaxPage }}; p++)); do
+          for ((p=1; p<=${SHIPPING_MAX_PAGE}; p++)); do
             echo "Fetching Shipping Trials Page $p"
             RES=$(curl -sS -x "$PROXY_URL" \
               -H "User-Agent: $UA" \
@@ -120,7 +127,7 @@ jobs:
             fi
 
             echo "$RES" | jq -r '.data.data[].wr_id' \
-              | xargs -P2 -I{} ./fetch_detail_and_slink.sh {} "tmp/shipping/{}.json"
+              | xargs -P5 -I{} ./fetch_detail_and_slink.sh {} "tmp/shipping/{}.json"
 
             jq -s '.' tmp/shipping/*.json > "tmp/shipping_page_${p}.json"
             jq --arg p "$p" --slurpfile pageData "tmp/shipping_page_${p}.json" \
