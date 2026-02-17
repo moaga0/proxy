@@ -1,0 +1,59 @@
+name: stylec-slink
+
+on:
+  workflow_dispatch:
+    inputs:
+      wrIds:
+        description: "Comma separated wr_id list (e.g. 123,456,789)"
+        required: true
+
+jobs:
+  slink:
+    runs-on: ubuntu-latest
+
+    env:
+      PROXY_URL: "socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
+      STYLEC_COOKIE: "${{ secrets.STYLEC_COOKIE }}"
+      UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Init slink.json
+        run: |
+          echo '{}' > slink.json
+
+      - name: Fetch slinks (Parallel=5)
+        run: |
+          set -euo pipefail
+
+          echo "${{ inputs.wrIds }}" | tr ',' '\n' | sed '/^\s*$/d' > wrids.txt
+
+          # wr_id별 응답을 tmp로 저장
+          mkdir -p tmp/slink
+
+          cat wrids.txt | xargs -P5 -I{} sh -c '
+            WRID="{}"
+            RES=$(curl -sS -x "$PROXY_URL" \
+              -H "User-Agent: $UA" \
+              -H "Cookie: $STYLEC_COOKIE" \
+              -H "Origin: https://www.stylec.co.kr" \
+              -H "Referer: https://www.stylec.co.kr/trials/${WRID}" \
+              --data-urlencode "pagePath=/trials/${WRID}" \
+              "https://www.stylec.co.kr/api/util/modal.share.php" || true)
+
+            SLINK=$(echo "$RES" | jq -r ".slink // empty" 2>/dev/null || true)
+            jq -n --arg k "$WRID" --arg v "$SLINK" '{($k): $v}' > "tmp/slink/${WRID}.json"
+          '
+
+          # 병합: { "123":"...", "456":"..." }
+          jq -s 'add' tmp/slink/*.json > slink.json
+
+      - name: Upload slink.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: stylec-slink
+          path: slink.json
