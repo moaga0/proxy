@@ -22,35 +22,39 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      - name: Init slink.json
-        run: |
-          echo '{}' > slink.json
-
-      - name: Fetch slinks (Parallel=5)
+      - name: Fetch slinks (Parallel=5) and build slink.json
         run: |
           set -euo pipefail
 
+          # 입력 wrIds -> 줄 단위로 정리
           echo "${{ inputs.wrIds }}" | tr ',' '\n' | sed '/^\s*$/d' > wrids.txt
-
-          # wr_id별 응답을 tmp로 저장
           mkdir -p tmp/slink
 
-          cat wrids.txt | xargs -P5 -I{} sh -c '
-            WRID="{}"
-            RES=$(curl -sS -x "$PROXY_URL" \
+          # wr_id 별로 요청 (병렬 5)
+          cat wrids.txt | xargs -P5 -I{} bash -c '
+            set -euo pipefail
+            WRID="$1"
+
+            RES="$(curl -sS -x "$PROXY_URL" \
               -H "User-Agent: $UA" \
               -H "Cookie: $STYLEC_COOKIE" \
               -H "Origin: https://www.stylec.co.kr" \
               -H "Referer: https://www.stylec.co.kr/trials/${WRID}" \
               --data-urlencode "pagePath=/trials/${WRID}" \
-              "https://www.stylec.co.kr/api/util/modal.share.php" || true)
+              "https://www.stylec.co.kr/api/util/modal.share.php" || true)"
 
-            SLINK=$(echo "$RES" | jq -r ".slink // empty" 2>/dev/null || true)
-            jq -n --arg k "$WRID" --arg v "$SLINK" '{($k): $v}' > "tmp/slink/${WRID}.json"
-          '
+            SLINK="$(echo "$RES" | jq -r ".slink // empty" 2>/dev/null || true)"
 
-          # 병합: { "123":"...", "456":"..." }
-          jq -s 'add' tmp/slink/*.json > slink.json
+            # { "wrId": "slink" } 단일 객체로 저장
+            jq -n --arg k "$WRID" --arg v "$SLINK" "{(\$k): \$v}" > "tmp/slink/${WRID}.json"
+          ' _ {}
+
+          # ✅ tmp/slink/*.json이 하나도 없을 때도 안전하게 {} 생성
+          if ls tmp/slink/*.json >/dev/null 2>&1; then
+            jq -s 'add' tmp/slink/*.json > slink.json
+          else
+            echo '{}' > slink.json
+          fi
 
       - name: Upload slink.json
         uses: actions/upload-artifact@v4
