@@ -8,12 +8,9 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # ✅ 여기 두 값만 Actions에서 직접 수정하시면 됩니다.
       VISIT_MAX_PAGE: "5"
       SHIPPING_MAX_PAGE: "6"
-
       PROXY_URL: "socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
-      STYLEC_COOKIE: "${{ secrets.STYLEC_COOKIE }}"
       UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
 
     steps:
@@ -36,103 +33,122 @@ jobs:
         run: |
           mkdir -p tmp/visit tmp/shipping
 
-      - name: Create helper script (detail + share slink in parallel)
+      - name: Create fetch helper
         run: |
-          cat > fetch_detail_and_slink.sh <<'BASH'
+          cat > fetch_detail.sh <<'BASH'
           #!/usr/bin/env bash
           set -euo pipefail
 
           WRID="$1"
           OUTFILE="$2"
 
-          DETAIL_F="$(mktemp)"
-          SHARE_F="$(mktemp)"
-          trap 'rm -f "$DETAIL_F" "$SHARE_F"' EXIT
+          TMPFILE="$(mktemp)"
 
-          # detail / share를 같은 wr_id에 대해 동시에 호출
-          curl -sS -x "$PROXY_URL" \
+          # HTTP 에러/프록시 에러가 나도 전체가 죽지 않게 처리
+          if curl -sS -x "$PROXY_URL" \
             -H "User-Agent: $UA" \
             -H "Referer: https://www.stylec.co.kr/" \
             "https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=${WRID}" \
-            > "$DETAIL_F" &
+            -o "$TMPFILE"; then
 
-          # share는 실패해도 전체 파이프라인이 멈추지 않게 처리
-          ( curl -sS -x "$PROXY_URL" \
-              -H "User-Agent: $UA" \
-              -H "Cookie: $STYLEC_COOKIE" \
-              -H "Origin: https://www.stylec.co.kr" \
-              -H "Referer: https://www.stylec.co.kr/trials/${WRID}" \
-              --data-urlencode "pagePath=/trials/${WRID}" \
-              "https://www.stylec.co.kr/api/util/modal.share.php" \
-              > "$SHARE_F" || true ) &
-
-          wait
-
-          SLINK="$(jq -r '.slink // empty' "$SHARE_F" 2>/dev/null || true)"
-
-          # detail JSON에 data.slink로 주입
-          jq --arg slink "$SLINK" '
-            if (.data? and (.data | type) == "object") then
-              .data.slink = $slink
+            # 정상 JSON일 때만 최종 파일로 반영
+            if jq empty "$TMPFILE" >/dev/null 2>&1; then
+              mv "$TMPFILE" "$OUTFILE"
             else
-              .slink = $slink
-            end
-          ' "$DETAIL_F" > "$OUTFILE"
+              echo "Invalid JSON skipped: wr_id=${WRID}"
+              rm -f "$TMPFILE"
+            fi
+          else
+            echo "curl failed: wr_id=${WRID}"
+            rm -f "$TMPFILE"
+          fi
           BASH
 
-          chmod +x fetch_detail_and_slink.sh
+          chmod +x fetch_detail.sh
 
-      - name: Crawl Visit Trials with Details + slink (Parallel=5)
+      - name: Crawl Visit Trials with Details (Parallel=2)
         run: |
           set -euo pipefail
 
           for ((p=1; p<=${VISIT_MAX_PAGE}; p++)); do
             echo "Fetching Visit Trials Page $p"
-            RES=$(curl -sS -x "$PROXY_URL" \
+
+            RES_FILE="$(mktemp)"
+            curl -sS -x "$PROXY_URL" \
               -H "User-Agent: $UA" \
               -H "Referer: https://www.stylec.co.kr/" \
-              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%B0%A9%EB%AC%B8%ED%98%95&include_finish=true")
+              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%B0%A9%EB%AC%B8%ED%98%95&include_finish=false" \
+              -o "$RES_FILE"
 
-            COUNT=$(echo "$RES" | jq '.data.data | length')
+            if ! jq empty "$RES_FILE" >/dev/null 2>&1; then
+              echo "Invalid page JSON on visit page $p, skipping"
+              rm -f "$RES_FILE"
+              continue
+            fi
+
+            COUNT=$(jq '.data.data | length' "$RES_FILE")
             if [ "$COUNT" -eq 0 ]; then
               echo "No more Visit Trials, stopping."
+              rm -f "$RES_FILE"
               break
             fi
 
-            echo "$RES" | jq -r '.data.data[].wr_id' \
-              | xargs -P5 -I{} ./fetch_detail_and_slink.sh {} "tmp/visit/{}.json"
+            jq -r '.data.data[].wr_id' "$RES_FILE" | xargs -P2 -I{} ./fetch_detail.sh {} "tmp/visit/{}.json"
+            rm -f "$RES_FILE"
 
-            jq -s '.' tmp/visit/*.json > "tmp/visit_page_${p}.json"
-            jq --arg p "$p" --slurpfile pageData "tmp/visit_page_${p}.json" \
-              '.visit.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
-            mv tmp.json result.json
+            if find tmp/visit -maxdepth 1 -name '*.json' | grep -q .; then
+              find tmp/visit -maxdepth 1 -name '*.json' -print0 | xargs -0 jq -s '.' > "tmp/visit_page_${p}.json"
+
+              jq --arg p "$p" --slurpfile pageData "tmp/visit_page_${p}.json" \
+                '.visit.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
+              mv tmp.json result.json
+            else
+              echo "No valid visit detail JSON files on page $p"
+            fi
+
             rm -f tmp/visit/*.json
           done
 
-      - name: Crawl Shipping Trials with Details + slink (Parallel=5)
+      - name: Crawl Shipping Trials with Details (Parallel=2)
         run: |
           set -euo pipefail
 
           for ((p=1; p<=${SHIPPING_MAX_PAGE}; p++)); do
             echo "Fetching Shipping Trials Page $p"
-            RES=$(curl -sS -x "$PROXY_URL" \
+
+            RES_FILE="$(mktemp)"
+            curl -sS -x "$PROXY_URL" \
               -H "User-Agent: $UA" \
               -H "Referer: https://www.stylec.co.kr/" \
-              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%AF%B8%EC%85%98%2F%EC%9D%B8%EC%A6%9D&campaignType[]=%EB%B0%B0%EB%8B%AC%ED%98%95&campaignType[]=%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%EF%BC%8B%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%ED%98%95&include_finish=true")
+              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%AF%B8%EC%85%98%2F%EC%9D%B8%EC%A6%9D&campaignType[]=%EB%B0%B0%EB%8B%AC%ED%98%95&campaignType[]=%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%EF%BC%8B%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%ED%98%95&include_finish=false" \
+              -o "$RES_FILE"
 
-            COUNT=$(echo "$RES" | jq '.data.data | length')
+            if ! jq empty "$RES_FILE" >/dev/null 2>&1; then
+              echo "Invalid page JSON on shipping page $p, skipping"
+              rm -f "$RES_FILE"
+              continue
+            fi
+
+            COUNT=$(jq '.data.data | length' "$RES_FILE")
             if [ "$COUNT" -eq 0 ]; then
               echo "No more Shipping Trials, stopping."
+              rm -f "$RES_FILE"
               break
             fi
 
-            echo "$RES" | jq -r '.data.data[].wr_id' \
-              | xargs -P5 -I{} ./fetch_detail_and_slink.sh {} "tmp/shipping/{}.json"
+            jq -r '.data.data[].wr_id' "$RES_FILE" | xargs -P2 -I{} ./fetch_detail.sh {} "tmp/shipping/{}.json"
+            rm -f "$RES_FILE"
 
-            jq -s '.' tmp/shipping/*.json > "tmp/shipping_page_${p}.json"
-            jq --arg p "$p" --slurpfile pageData "tmp/shipping_page_${p}.json" \
-              '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
-            mv tmp.json result.json
+            if find tmp/shipping -maxdepth 1 -name '*.json' | grep -q .; then
+              find tmp/shipping -maxdepth 1 -name '*.json' -print0 | xargs -0 jq -s '.' > "tmp/shipping_page_${p}.json"
+
+              jq --arg p "$p" --slurpfile pageData "tmp/shipping_page_${p}.json" \
+                '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
+              mv tmp.json result.json
+            else
+              echo "No valid shipping detail JSON files on page $p"
+            fi
+
             rm -f tmp/shipping/*.json
           done
 
