@@ -9,7 +9,7 @@ jobs:
 
     env:
       VISIT_MAX_PAGE: "5"
-      SHIPPING_MAX_PAGE: "10"
+      SHIPPING_MAX_PAGE: "20"
       PROXY_URL: "socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
       UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
 
