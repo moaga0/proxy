@@ -10,7 +10,7 @@ jobs:
     env:
       VISIT_MAX_PAGE: "5"
       SHIPPING_MAX_PAGE: "30"
-      PROXY_URL: "socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
+      #PROXY_URL: "socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
       UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
 
     steps:
@@ -39,8 +39,7 @@ jobs:
 
           for ((p=1; p<=${VISIT_MAX_PAGE}; p++)); do
             echo "Fetching Visit Trials Page $p"
-            RES=$(curl -sS -x "$PROXY_URL" \
-              -H "User-Agent: $UA" \
+            RES=$(curl -s -H "User-Agent: $UA" \
               -H "Referer: https://www.stylec.co.kr/" \
               "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%B0%A9%EB%AC%B8%ED%98%95&include_finish=false")
 
@@ -50,9 +49,8 @@ jobs:
               break
             fi
 
-            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P2 -I{} sh -c \
-              "curl -sS -x \"$PROXY_URL\" \
-                -H 'User-Agent: $UA' \
+            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P5 -I{} sh -c \
+              "curl -s -H 'User-Agent: $UA' \
                 -H 'Referer: https://www.stylec.co.kr/' \
                 'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/visit/{}.json"
 
@@ -69,8 +67,7 @@ jobs:
 
           for ((p=1; p<=${SHIPPING_MAX_PAGE}; p++)); do
             echo "Fetching Shipping Trials Page $p"
-            RES=$(curl -sS -x "$PROXY_URL" \
-              -H "User-Agent: $UA" \
+            RES=$(curl -s -H "User-Agent: $UA" \
               -H "Referer: https://www.stylec.co.kr/" \
               "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%AF%B8%EC%85%98%2F%EC%9D%B8%EC%A6%9D&campaignType[]=%EB%B0%B0%EB%8B%AC%ED%98%95&campaignType[]=%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%EF%BC%8B%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%ED%98%95&campaignType[]=%EC%A0%9C%EA%B3%B5%ED%98%95&include_finish=false")
 
@@ -80,9 +77,8 @@ jobs:
               break
             fi
 
-            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P2 -I{} sh -c \
-              "curl -sS -x \"$PROXY_URL\" \
-                -H 'User-Agent: $UA' \
+            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P5 -I{} sh -c \
+              "curl -s -H 'User-Agent: $UA' \
                 -H 'Referer: https://www.stylec.co.kr/' \
                 'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/shipping/{}.json"
 
