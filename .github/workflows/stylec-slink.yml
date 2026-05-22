@@ -40,6 +40,7 @@ jobs:
               -H "Cookie: $STYLEC_COOKIE" \
               -H "Origin: https://www.stylec.co.kr" \
               -H "Referer: https://www.stylec.co.kr/trials/${WRID}" \
+              -H "Content-Type: text/plain;charset=UTF-8" \
               --data-urlencode "pagePath=/trials/${WRID}" \
               "https://www.stylec.co.kr/api/util/modal.share.php" || true)"
 
