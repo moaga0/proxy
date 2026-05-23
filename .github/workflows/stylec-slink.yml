@@ -35,8 +35,7 @@ jobs:
             set -euo pipefail
             WRID="$1"
 
-            RES="$(curl -sS -x "$PROXY_URL" \
-              -H "User-Agent: $UA" \
+            RES="$(curl -s -H "User-Agent: $UA" \
               -H "Cookie: $STYLEC_COOKIE" \
               -H "Origin: https://www.stylec.co.kr" \
               -H "Referer: https://www.stylec.co.kr/trials/${WRID}" \
