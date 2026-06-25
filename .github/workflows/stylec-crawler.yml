@@ -10,7 +10,8 @@ jobs:
     env:
       VISIT_MAX_PAGE: "5"
       SHIPPING_MAX_PAGE: "30"
-      #PROXY_URL: "socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
+      DETAIL_PARALLEL: "5"
+      # PROXY_URL: "socks5h://${{ secrets.PROXY_USER }}:${{ secrets.PROXY_PASS }}@${{ secrets.PROXY_HOST }}:${{ secrets.PROXY_PORT }}"
       UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
 
     steps:
@@ -22,26 +23,35 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      - name: Initialize result.json
+      - name: Initialize folders and result.json
         run: |
+          mkdir -p tmp/visit tmp/shipping tmp/failed
+
           echo '{
             "visit": { "pages": [] },
             "shipping": { "pages": [] }
           }' > result.json
 
-      - name: Prepare temp folders
+      - name: Crawl Visit Trials with Details
         run: |
-          mkdir -p tmp/visit tmp/shipping
-
-      - name: Crawl Visit Trials with Details (Parallel=2)
-        run: |
-          set -euo pipefail
+          set -uo pipefail
 
           for ((p=1; p<=${VISIT_MAX_PAGE}; p++)); do
             echo "Fetching Visit Trials Page $p"
-            RES=$(curl -s -H "User-Agent: $UA" \
+
+            if ! RES=$(curl -fsS --retry 3 --retry-delay 2 \
+              -H "User-Agent: $UA" \
               -H "Referer: https://www.stylec.co.kr/" \
-              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%B0%A9%EB%AC%B8%ED%98%95&include_finish=false")
+              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%B0%A9%EB%AC%B8%ED%98%95&include_finish=false"); then
+              echo "Visit list request failed on page $p. Stop crawling visit."
+              break
+            fi
+
+            if ! echo "$RES" | jq -e '.data.data | type == "array"' > /dev/null; then
+              echo "Invalid Visit list response on page $p. Stop crawling visit."
+              echo "$RES" > "tmp/failed/visit_page_${p}_list_response.txt"
+              break
+            fi
 
             COUNT=$(echo "$RES" | jq '.data.data | length')
             if [ "$COUNT" -eq 0 ]; then
@@ -49,27 +59,65 @@ jobs:
               break
             fi
 
-            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P15 -I{} sh -c \
-              "curl -s -H 'User-Agent: $UA' \
-                -H 'Referer: https://www.stylec.co.kr/' \
-                'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/visit/{}.json"
+            rm -f tmp/visit/*.json tmp/visit/*.tmp
 
-            jq -s '.' tmp/visit/*.json > "tmp/visit_page_${p}.json"
-            jq --arg p "$p" --slurpfile pageData "tmp/visit_page_${p}.json" \
-              '.visit.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
-            mv tmp.json result.json
-            rm -f tmp/visit/*.json
+            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -r -P"${DETAIL_PARALLEL}" -I{} sh -c '
+              id="$1"
+              type="$2"
+              url="https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=$id"
+
+              if curl -fsS --retry 3 --retry-delay 2 \
+                -H "User-Agent: $UA" \
+                -H "Referer: https://www.stylec.co.kr/" \
+                "$url" > "tmp/$type/$id.tmp"; then
+
+                if jq -e . "tmp/$type/$id.tmp" > /dev/null 2>&1; then
+                  mv "tmp/$type/$id.tmp" "tmp/$type/$id.json"
+                else
+                  echo "Invalid JSON detail skipped: $type / $id"
+                  mv "tmp/$type/$id.tmp" "tmp/failed/${type}_${id}_detail_response.txt"
+                fi
+              else
+                echo "Detail request failed: $type / $id"
+                rm -f "tmp/$type/$id.tmp"
+              fi
+
+              exit 0
+            ' sh {} visit
+
+            if ls tmp/visit/*.json > /dev/null 2>&1; then
+              jq -s '.' tmp/visit/*.json > "tmp/visit_page_${p}.json"
+
+              jq --arg p "$p" --slurpfile pageData "tmp/visit_page_${p}.json" \
+                '.visit.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp/result.json
+
+              mv tmp/result.json result.json
+              echo "Saved Visit page $p"
+            else
+              echo "No valid Visit detail JSON on page $p"
+            fi
           done
 
-      - name: Crawl Shipping Trials with Details (Parallel=2)
+      - name: Crawl Shipping Trials with Details
         run: |
-          set -euo pipefail
+          set -uo pipefail
 
           for ((p=1; p<=${SHIPPING_MAX_PAGE}; p++)); do
             echo "Fetching Shipping Trials Page $p"
-            RES=$(curl -s -H "User-Agent: $UA" \
+
+            if ! RES=$(curl -fsS --retry 3 --retry-delay 2 \
+              -H "User-Agent: $UA" \
               -H "Referer: https://www.stylec.co.kr/" \
-              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%AF%B8%EC%85%98%2F%EC%9D%B8%EC%A6%9D&campaignType[]=%EB%B0%B0%EB%8B%AC%ED%98%95&campaignType[]=%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%EF%BC%8B%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%ED%98%95&campaignType[]=%EC%A0%9C%EA%B3%B5%ED%98%95&include_finish=false")
+              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%AF%B8%EC%85%98%2F%EC%9D%B8%EC%A6%9D&campaignType[]=%EB%B0%B0%EB%8B%AC%ED%98%95&campaignType[]=%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%EF%BC%8B%EA%B5%AC%EB%A7%A4%ED%8F%89&campaignType[]=%ED%8E%98%EC%9D%B4%EB%B0%B1%ED%98%95&campaignType[]=%EC%A0%9C%EA%B3%B5%ED%98%95&include_finish=false"); then
+              echo "Shipping list request failed on page $p. Stop crawling shipping."
+              break
+            fi
+
+            if ! echo "$RES" | jq -e '.data.data | type == "array"' > /dev/null; then
+              echo "Invalid Shipping list response on page $p. Stop crawling shipping."
+              echo "$RES" > "tmp/failed/shipping_page_${p}_list_response.txt"
+              break
+            fi
 
             COUNT=$(echo "$RES" | jq '.data.data | length')
             if [ "$COUNT" -eq 0 ]; then
@@ -77,20 +125,56 @@ jobs:
               break
             fi
 
-            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -P15 -I{} sh -c \
-              "curl -s -H 'User-Agent: $UA' \
-                -H 'Referer: https://www.stylec.co.kr/' \
-                'https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id={}' > tmp/shipping/{}.json"
+            rm -f tmp/shipping/*.json tmp/shipping/*.tmp
 
-            jq -s '.' tmp/shipping/*.json > "tmp/shipping_page_${p}.json"
-            jq --arg p "$p" --slurpfile pageData "tmp/shipping_page_${p}.json" \
-              '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp.json
-            mv tmp.json result.json
-            rm -f tmp/shipping/*.json
+            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -r -P"${DETAIL_PARALLEL}" -I{} sh -c '
+              id="$1"
+              type="$2"
+              url="https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=$id"
+
+              if curl -fsS --retry 3 --retry-delay 2 \
+                -H "User-Agent: $UA" \
+                -H "Referer: https://www.stylec.co.kr/" \
+                "$url" > "tmp/$type/$id.tmp"; then
+
+                if jq -e . "tmp/$type/$id.tmp" > /dev/null 2>&1; then
+                  mv "tmp/$type/$id.tmp" "tmp/$type/$id.json"
+                else
+                  echo "Invalid JSON detail skipped: $type / $id"
+                  mv "tmp/$type/$id.tmp" "tmp/failed/${type}_${id}_detail_response.txt"
+                fi
+              else
+                echo "Detail request failed: $type / $id"
+                rm -f "tmp/$type/$id.tmp"
+              fi
+
+              exit 0
+            ' sh {} shipping
+
+            if ls tmp/shipping/*.json > /dev/null 2>&1; then
+              jq -s '.' tmp/shipping/*.json > "tmp/shipping_page_${p}.json"
+
+              jq --arg p "$p" --slurpfile pageData "tmp/shipping_page_${p}.json" \
+                '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp/result.json
+
+              mv tmp/result.json result.json
+              echo "Saved Shipping page $p"
+            else
+              echo "No valid Shipping detail JSON on page $p"
+            fi
           done
 
       - name: Upload result.json
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: stylec-result
           path: result.json
+
+      - name: Upload failed responses
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stylec-failed-responses
+          path: tmp/failed/
+          if-no-files-found: ignore
