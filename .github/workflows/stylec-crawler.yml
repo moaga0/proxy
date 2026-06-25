@@ -26,6 +26,7 @@ jobs:
       - name: Initialize folders and result.json
         run: |
           mkdir -p tmp/visit tmp/shipping tmp/failed
+          : > tmp/seen_visit_ids.txt
 
           echo '{
             "visit": { "pages": [] },
@@ -73,6 +74,7 @@ jobs:
 
                 if jq -e . "tmp/$type/$id.tmp" > /dev/null 2>&1; then
                   mv "tmp/$type/$id.tmp" "tmp/$type/$id.json"
+                  echo "$id" >> tmp/seen_visit_ids.txt
                 else
                   echo "Invalid JSON detail skipped: $type / $id"
                   mv "tmp/$type/$id.tmp" "tmp/failed/${type}_${id}_detail_response.txt"
@@ -84,6 +86,8 @@ jobs:
 
               exit 0
             ' sh {} visit
+
+            sort -u tmp/seen_visit_ids.txt -o tmp/seen_visit_ids.txt
 
             if ls tmp/visit/*.json > /dev/null 2>&1; then
               jq -s '.' tmp/visit/*.json > "tmp/visit_page_${p}.json"
@@ -130,6 +134,12 @@ jobs:
             echo "$RES" | jq -r '.data.data[].wr_id' | xargs -r -P"${DETAIL_PARALLEL}" -I{} sh -c '
               id="$1"
               type="$2"
+
+              if grep -qx "$id" tmp/seen_visit_ids.txt; then
+                echo "Already saved as visit, skipped from shipping: $id"
+                exit 0
+              fi
+
               url="https://api2.stylec.co.kr:6439/v1/trial/detail?wr_id=$id"
 
               if curl -fsS --retry 3 --retry-delay 2 \
