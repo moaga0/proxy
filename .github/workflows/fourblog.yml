@@ -70,7 +70,8 @@ jobs:
             OFFSET=$(( (p - 1) * 30 ))
             echo "🚀 Fetching VISIT page $p (offset=$OFFSET)"
 
-            URL="https://4blog.net/loadMoreDataCategory?offset=$OFFSET&limit=30&category=all&category1=local&location=&location1=&search=&bid="
+            #URL="https://4blog.net/loadMoreDataCategory?offset=$OFFSET&limit=30&category=all&category1=local&location=&location1=&search=&bid="
+            URL="https://4blog.net/loadMoreDataCategoryV2?offset=$OFFSET&limit=30&maxLoadCount=479&category=&sort=latest&category1=local&location=&location1=&search=&search2=&bid="
 
             RES=$(curl -s \
               -x "${{ steps.session.outputs.SELECTED_PROXY }}" \
@@ -118,8 +119,9 @@ jobs:
             OFFSET=$(( (p - 1) * 30 ))
             echo "🚀 Fetching SHIPPING page $p (offset=$OFFSET)"
 
-            URL="https://4blog.net/loadMoreDataCategory?offset=$OFFSET&limit=30&category=all&category1=deliv&location=&location1=&search=&bid="
-
+            #URL="https://4blog.net/loadMoreDataCategory?offset=$OFFSET&limit=30&category=all&category1=deliv&location=&location1=&search=&bid="
+            URL="https://4blog.net/loadMoreDataCategoryV2?offset=$OFFSET&limit=30&maxLoadCount=465&category=&sort=popular&category1=deliv&location=&location1=&search=&search2=&bid="
+            
             RES=$(curl -s \
               -x "${{ steps.session.outputs.SELECTED_PROXY }}" \
               -A "${{ steps.session.outputs.SELECTED_UA }}" \
