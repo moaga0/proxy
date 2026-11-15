@@ -47,7 +47,7 @@ jobs:
               -H "Sec-Fetch-Site: same-site" \
               -H "Sec-Fetch-Mode: cors" \
               -H "Sec-Fetch-Dest: empty" \
-              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&include_finish=false&rd=454196"); then
+              "https://api2.stylec.co.kr:6439/v1/trial?order=wr_last&page=$p&count=50&campaignType[]=%EB%B0%A9%EB%AC%B8%ED%98%95&include_finish=false&rd=454196"); then
               echo "Visit list request failed on page $p."
               exit 1
             fi
@@ -139,14 +139,12 @@ jobs:
             COUNT=$(echo "$RES" | jq '.data.data | length')
             if [ "$COUNT" -eq 0 ]; then
               echo "No more Shipping Trials, stopping."
-              jq --argjson p "$p" '.shipping.pages += [{"page": $p, "data": []}]' result.json > tmp/result.json
-              mv tmp/result.json result.json
               break
             fi
 
             rm -f tmp/shipping/*.json tmp/shipping/*.tmp
 
-            echo "$RES" | jq -r '.data.data[].wr_id' | xargs -r -P"${DETAIL_PARALLEL}" -I{} sh -c '
+            echo "$RES" | jq -r '.data.data[] | select(.ca_name != "방문") | .wr_id' | xargs -r -P"${DETAIL_PARALLEL}" -I{} sh -c '
               id="$1"
               type="$2"
 
@@ -184,16 +182,19 @@ jobs:
             if ls tmp/shipping/*.json > /dev/null 2>&1; then
               jq -s '.' tmp/shipping/*.json > "tmp/shipping_page_${p}.json"
 
-              jq --arg p "$p" --slurpfile pageData "tmp/shipping_page_${p}.json" \
-                '.shipping.pages += [{"page": ($p|tonumber), "data": $pageData[0]}]' result.json > tmp/result.json
+              jq --slurpfile pageData "tmp/shipping_page_${p}.json" \
+                '.shipping.pages += [{"page": (.shipping.pages | length + 1), "data": $pageData[0]}]' result.json > tmp/result.json
 
               mv tmp/result.json result.json
               echo "Saved Shipping page $p"
             else
-              echo "No valid Shipping detail JSON on page $p"
-              exit 1
+              echo "Shipping page $p contains only visit duplicates; continuing."
             fi
           done
+          if [ "$(jq '.shipping.pages | length' result.json)" -eq 0 ]; then
+            jq '.shipping.pages = [{"page": 1, "data": []}]' result.json > tmp/result.json
+            mv tmp/result.json result.json
+          fi
 
       - name: Upload result.json
         if: always()
